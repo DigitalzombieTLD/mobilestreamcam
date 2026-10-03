@@ -1,14 +1,15 @@
 #!/bin/bash
 #
 # build_and_flash.sh - One-click build, generate image, and flash script
-# Usage: ./build_and_flash.sh [--no-clean] [--no-flash] [--no-model]
+# Usage: ./build_and_flash.sh [--no-clean] [--no-flash] [--no-model] [--with-model]
 #
 # Options:
 #   --no-clean              Skip 'make clean'
 #   --no-flash              Build only, don't flash
 #   --no-model              Flash firmware without models
+#   --with-model            Force flashing the face models (default: only for tflm_face_embedding)
 #
-# Models:
+# Models (only used by the tflm_face_embedding app; mjpeg_stream_spi needs none):
 #   - SCRFD: Face detection (160x160, ~700KB)
 #   - MobileFaceNet: Face embedding 128D (112x112, ~400KB)
 #
@@ -23,7 +24,13 @@ OUTPUT_DIR="${IMAGE_GEN_DIR}/output_case1_sec_wlcsp"
 ELF_FILE="${APP_DIR}/obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf"
 
 # App configuration
-MAKEFILE_APP_TYPE="tflm_face_embedding"
+MAKEFILE_APP_TYPE="mjpeg_stream_spi"
+
+# Apps that need no TFLM model skip model flashing
+NO_MODEL=1
+if [ "${MAKEFILE_APP_TYPE}" = "tflm_face_embedding" ]; then
+    NO_MODEL=0
+fi
 
 # Model paths
 SCRFD_MODEL="${PROJECT_ROOT}/model_zoo/tflm_face_embedding/scrfd/models/scrfd_500m_kps_int8_vela.tflite"
@@ -32,12 +39,15 @@ EMBEDDING_MODEL="${PROJECT_ROOT}/model_zoo/tflm_face_embedding/foamliu_mobilefac
 EMBEDDING_ADDR="0x400000"
 
 # Serial port (auto-detect)
-SERIAL_PORT=$(ls /dev/tty.usbmodem* 2>/dev/null | head -1)
+SERIAL_PORT=$(ls /dev/tty.usbmodem* /dev/ttyACM* 2>/dev/null | head -1)
+
+# Tools (GNU make is "gmake" on macOS)
+MAKE_CMD=$(command -v gmake || command -v make)
+NCPU=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
 # Parse arguments
 NO_CLEAN=0
 NO_FLASH=0
-NO_MODEL=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --no-clean)
@@ -52,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             NO_MODEL=1
             shift
             ;;
+        --with-model)
+            NO_MODEL=0
+            shift
+            ;;
         *)
             shift
             ;;
@@ -63,7 +77,11 @@ echo "  Grove Vision AI Module V2 Build Tool"
 echo "========================================"
 echo ""
 echo "App: ${MAKEFILE_APP_TYPE}"
-echo "Models: SCRFD + MobileFaceNet 128D"
+if [ ${NO_MODEL} -eq 0 ]; then
+    echo "Models: SCRFD + MobileFaceNet 128D"
+else
+    echo "Models: none"
+fi
 echo ""
 
 # Step 1: Build firmware
@@ -76,15 +94,15 @@ sed -i.bak "s/^APP_TYPE = .*/APP_TYPE = ${MAKEFILE_APP_TYPE}/" makefile && rm -f
 echo "Set APP_TYPE = ${MAKEFILE_APP_TYPE} in makefile"
 echo ""
 if [ ${NO_CLEAN} -eq 0 ]; then
-    gmake clean
+    ${MAKE_CMD} clean
     echo ""
 else
     echo "(Skipping clean - incremental build)"
     echo ""
 fi
-echo "Compiling (parallel, $(sysctl -n hw.ncpu) cores)..."
+echo "Compiling (parallel, ${NCPU} cores)..."
 echo ""
-gmake -j$(sysctl -n hw.ncpu)
+${MAKE_CMD} -j${NCPU}
 
 # Verify ELF file
 if [ ! -f "${ELF_FILE}" ]; then
@@ -167,7 +185,11 @@ cd "${PROJECT_ROOT}"
 
 # Use uv environment for xmodem
 XMODEM_DIR="${PROJECT_ROOT}/xmodem"
-PYTHON_CMD="uv run --directory ${XMODEM_DIR} python"
+if command -v uv >/dev/null 2>&1; then
+    PYTHON_CMD="uv run --directory ${XMODEM_DIR} python"
+else
+    PYTHON_CMD="python3"
+fi
 
 # Build flash command
 if [ ${NO_MODEL} -eq 0 ]; then

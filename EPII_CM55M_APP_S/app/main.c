@@ -176,6 +176,18 @@ int main(void)
 }
 #endif
 
+#ifdef MJPEG_STREAM_SPI
+#include "mjpeg_stream_spi.h"
+
+/** main entry */
+int main(void)
+{
+	board_init();
+	app_main();
+	return 0;
+}
+#endif
+
 #ifdef TFLM_YOLOV8_GENDER_CLS
 #include "tflm_yolov8_gender_cls.h"
 
