@@ -152,8 +152,9 @@ CUSTOMER ?= seeed
 # tflm_peoplenet
 # tflm_yolo11_od
 # tflm_yolov8_gender_cls
+# mjpeg_stream_spi (WiFi MJPEG camera, pairs with esp32c3_wifi_stream/)
 ##
-APP_TYPE = tflm_face_embedding
+APP_TYPE = mjpeg_stream_spi
  
 ### Options above must be added before include options.mk ###
 override EPII_ROOT := $(strip $(subst \,/,$(EPII_ROOT)))
