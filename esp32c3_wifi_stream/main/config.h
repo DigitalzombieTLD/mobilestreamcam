@@ -14,10 +14,10 @@
 
 /* ---- WiFi ---- */
 #ifndef WIFI_SSID
-#define WIFI_SSID                 "YOUR_WIFI_SSID"
+#define WIFI_SSID                 "SteamCam"
 #endif
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD             "YOUR_WIFI_PASSWORD"   /* "" for an open network */
+#define WIFI_PASSWORD             "StreamCam123"   /* "" for an open network */
 #endif
 #ifndef DEVICE_HOSTNAME
 #define DEVICE_HOSTNAME           "mobilestreamcam"       /* also advertised as <hostname>.local (mDNS) */
@@ -25,13 +25,13 @@
 
 /* Optional static IP (0 = DHCP) */
 #ifndef USE_STATIC_IP
-#define USE_STATIC_IP             0
+#define USE_STATIC_IP             1
 #endif
 #ifndef STATIC_IP
-#define STATIC_IP                 "192.168.1.50"
-#define STATIC_GATEWAY            "192.168.1.1"
+#define STATIC_IP                 "10.153.239.222"
+#define STATIC_GATEWAY            "10.153.239.1"
 #define STATIC_NETMASK            "255.255.255.0"
-#define STATIC_DNS                "192.168.1.1"
+#define STATIC_DNS                "10.153.239.1"
 #endif
 
 /* ---- SPI link from the HX6538 (HX = master, ESP32-C3 = slave) ----
@@ -65,4 +65,4 @@
 
 /* ---- HTTP ---- */
 #define HTTP_PORT                 80
-#define MAX_STREAM_CLIENTS        2
+#define MAX_STREAM_CLIENTS        3
