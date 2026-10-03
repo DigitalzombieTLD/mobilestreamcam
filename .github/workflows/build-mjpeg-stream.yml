@@ -1,0 +1,55 @@
+name: build-mjpeg-stream
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'EPII_CM55M_APP_S/app/scenario_app/mjpeg_stream_spi/**'
+      - 'esp32c3_wifi_stream/**'
+      - '.github/workflows/build-mjpeg-stream.yml'
+  pull_request:
+    paths:
+      - 'EPII_CM55M_APP_S/app/scenario_app/mjpeg_stream_spi/**'
+      - 'esp32c3_wifi_stream/**'
+      - '.github/workflows/build-mjpeg-stream.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hx6538:
+    name: HX6538 firmware (mjpeg_stream_spi)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi make
+      - name: build
+        working-directory: EPII_CM55M_APP_S
+        run: make -j"$(nproc)" APP_TYPE=mjpeg_stream_spi
+      - name: generate image
+        working-directory: we2_image_gen_local
+        run: |
+          cp ../EPII_CM55M_APP_S/obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf input_case1_secboot/
+          ./we2_local_image_gen project_case1_blp_wlcsp.json
+          ls -l output_case1_sec_wlcsp/output.img
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hx6538-output-img
+          path: we2_image_gen_local/output_case1_sec_wlcsp/output.img
+
+  esp32c3:
+    name: ESP32-C3 firmware (esp32c3_wifi_stream)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2.2
+          target: esp32c3
+          path: esp32c3_wifi_stream
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esp32c3-wifi-stream-bin
+          path: esp32c3_wifi_stream/build/esp32c3_wifi_stream.bin

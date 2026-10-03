@@ -10,7 +10,7 @@
 /*
  * Resolution. The OV5647 driver only provides a 640x480 binned sensor mode, so
  * the datapath resolution is selected by the INP subsample ratio:
- *   0 = 640x480 (default), 1 = 320x240, 2 = 160x120
+ *   0 = 640x480 (default), 1 = 320x240
  * (JPEG HW encoder: multiples of 16, see cisdp_cfg.h for limits.)
  */
 #define MJPEG_RES_MODE				0
@@ -19,7 +19,7 @@
 #define MJPEG_FRAME_WIDTH			640
 #define MJPEG_FRAME_HEIGHT			480
 #define MJPEG_DP_SUBSAMPLE			APP_DP_RES_YUV640x480_INP_SUBSAMPLE_1X
-#define MJPEG_MAX_FRAME_BYTES		(60 * 1024)
+#define MJPEG_MAX_FRAME_BYTES		(56 * 1024)
 #elif (MJPEG_RES_MODE == 1)
 #define MJPEG_FRAME_WIDTH			320
 #define MJPEG_FRAME_HEIGHT			240
@@ -38,7 +38,7 @@
 
 /*
  * MJPEG_MAX_FRAME_BYTES (above): frames larger than this limit are dropped.
- * 640x480 limit is the ESP32-C3 per-frame buffer (60 KB); the sensor datapath
+ * 640x480 limit is the ESP32-C3 per-frame buffer (56 KB); the sensor datapath
  * JPEG buffer itself is 76800 bytes (640x480) / 19200 bytes (320x240).
  */
 
