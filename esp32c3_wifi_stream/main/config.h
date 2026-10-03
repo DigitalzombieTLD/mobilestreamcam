@@ -60,9 +60,17 @@
 #define PTL_TYPE_JPG              0x01
 
 /* ---- Frame buffers (internal RAM, ~400 KB total on the C3) ---- */
-#define FRAME_MAX_BYTES           (56 * 1024)  /* must match MJPEG_MAX_FRAME_BYTES on the HX6538 */
+#define FRAME_MAX_BYTES           (24 * 1024)  /* hard limit: larger frames are dropped (counted as bad). 640x480 is ~5.7 KB typical.
+                                                  The HX6538 may send up to MJPEG_MAX_FRAME_BYTES (56 KB), the ESP32-C3 drops above this. */
 #define FRAME_SLOT_COUNT          3            /* 1 receiving + 1 latest + 1 being sent; use 2 if RAM is short */
 
 /* ---- HTTP ---- */
 #define HTTP_PORT                 80
-#define MAX_STREAM_CLIENTS        3
+#define MAX_STREAM_CLIENTS        1            /* only one viewer is ever needed; a new /stream request replaces the old one */
+
+/* ---- Health / low-heap watchdog ---- */
+#define HEALTH_PERIOD_MS          1000
+#define HEALTH_LOG_EVERY_S        10
+#define LOW_HEAP_BYTES            (6 * 1024)   /* free heap or largest block below this is "low" */
+#define LOW_HEAP_DROP_CLIENT_S    5            /* low for this long: drop the stream client */
+#define LOW_HEAP_RESTART_S        10           /* still low after this long: esp_restart() */
