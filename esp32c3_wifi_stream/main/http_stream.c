@@ -148,7 +148,7 @@ void http_stream_start(void)
     }
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.server_port = HTTP_PORT;
-    cfg.max_open_sockets = MAX_STREAM_CLIENTS + 3;
+    cfg.max_open_sockets = 5;
     cfg.max_uri_handlers = 6;
     cfg.lru_purge_enable = true;
     cfg.send_wait_timeout = 3;   /* drop clients that stall */
