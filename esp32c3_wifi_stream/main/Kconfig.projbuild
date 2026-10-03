@@ -1,0 +1,10 @@
+menu "mobilestreamcam"
+
+    config MSC_ENABLE_MDNS
+        bool "Advertise <hostname>.local via mDNS"
+        default y
+        help
+            Costs roughly 8-10 KB of heap (mDNS task, PCBs and buffers). Disable if the camera is always
+            reached by its (static) IP address.
+
+endmenu

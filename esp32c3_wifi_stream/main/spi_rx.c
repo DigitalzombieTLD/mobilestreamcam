@@ -19,6 +19,10 @@
 
 static const char *TAG = "spi_rx";
 
+#define SPI_RX_STACK_BYTES 3072
+static StaticTask_t s_task_tcb;
+static StackType_t s_task_stack[SPI_RX_STACK_BYTES / sizeof(StackType_t)] __attribute__((aligned(16)));
+
 static inline bool has_magic(const uint8_t *p)
 {
     return p[0] == PTL_MAGIC0 && p[1] == PTL_MAGIC1;
@@ -126,11 +130,12 @@ void spi_rx_start(void)
     spi_slave_interface_config_t slv = {
         .mode = SPI_MODE_NUM,
         .spics_io_num = SPI_PIN_CS,
-        .queue_size = 2,
+        .queue_size = 1,   /* one transaction in flight, it receives straight into the writer slot */
         .flags = 0,
     };
     ESP_ERROR_CHECK(spi_slave_initialize(SPI2_HOST, &bus, &slv, SPI_DMA_CH_AUTO));
-    xTaskCreate(spi_rx_task, "spi_rx", 4096, NULL, configMAX_PRIORITIES - 2, NULL);
+    xTaskCreateStatic(spi_rx_task, "spi_rx", SPI_RX_STACK_BYTES / sizeof(StackType_t), NULL,
+                      configMAX_PRIORITIES - 2, s_task_stack, &s_task_tcb);
     ESP_LOGI(TAG, "SPI slave ready: SCLK=%d MOSI=%d MISO=%d CS=%d mode=%d",
              SPI_PIN_SCLK, SPI_PIN_MOSI, SPI_PIN_MISO, SPI_PIN_CS, SPI_MODE_NUM);
 }

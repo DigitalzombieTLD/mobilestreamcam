@@ -3,6 +3,7 @@
  * power save off, max TX power, mDNS.
  */
 #include <stdio.h>
+#include "sdkconfig.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,7 +17,7 @@
 #include "config.h"
 #include "wifi_sta.h"
 
-static const char *TAG = "wifi";
+static const char *TAG = "wifi_sta";
 
 static wifi_got_ip_cb_t s_on_got_ip;
 static volatile bool s_connected;
@@ -24,20 +25,33 @@ static esp_netif_t *s_netif;
 static uint32_t s_retry;
 static esp_timer_handle_t s_retry_timer;
 
-static void retry_cb(void *arg)
+static void do_connect(void)
 {
-    esp_wifi_connect();
+    esp_err_t r = esp_wifi_connect();
+    if (r != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_connect: %s", esp_err_to_name(r));
+    }
 }
 
+static void retry_cb(void *arg)
+{
+    if (!s_connected) {
+        do_connect();
+    }
+}
+
+/* Radio settings. Must NOT be changed while associating/connected: calling esp_wifi_set_bandwidth()
+ * from the STA_CONNECTED handler tore the fresh connection down again ("disconnected (reason 8)"). */
 static void tune_radio(void)
 {
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(84)); /* units of 0.25 dBm, clamped to the regulatory max */
-    esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20);
+    ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20));
 }
 
 static void start_mdns(void)
 {
+#if CONFIG_MSC_ENABLE_MDNS
     static bool started;
     if (started) {
         return;
@@ -49,6 +63,7 @@ static void start_mdns(void)
         started = true;
         ESP_LOGI(TAG, "mDNS: %s.local", DEVICE_HOSTNAME);
     }
+#endif
 }
 
 static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
@@ -57,10 +72,11 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
         switch (id) {
         case WIFI_EVENT_STA_START:
             ESP_LOGI(TAG, "scanning for \"%s\"", WIFI_SSID);
-            esp_wifi_connect();
+            tune_radio();
+            do_connect();
             break;
         case WIFI_EVENT_STA_CONNECTED:
-            tune_radio();
+            esp_timer_stop(s_retry_timer);
             break;
         case WIFI_EVENT_STA_DISCONNECTED: {
             wifi_event_sta_disconnected_t *d = data;
@@ -80,6 +96,7 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
         ESP_LOGI(TAG, "got IP " IPSTR, IP2STR(&e->ip_info.ip));
         s_connected = true;
         s_retry = 0;
+        esp_timer_stop(s_retry_timer);
         start_mdns();
         if (s_on_got_ip) {
             s_on_got_ip();
@@ -113,6 +130,7 @@ void wifi_sta_start(wifi_got_ip_cb_t on_got_ip)
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM)); /* no NVS-backed WiFi config */
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, event_handler, NULL));
 
@@ -122,13 +140,12 @@ void wifi_sta_start(wifi_got_ip_cb_t on_got_ip)
     wc.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;           /* scan all channels for the SSID */
     wc.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;       /* best RSSI if several APs share the SSID */
     wc.sta.threshold.authmode = strlen(WIFI_PASSWORD) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
-    wc.sta.pmf_cfg.capable = true;
+    wc.sta.pmf_cfg.capable = true;                        /* needed for WPA3-SAE; also fine for WPA2 */
     wc.sta.pmf_cfg.required = false;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
