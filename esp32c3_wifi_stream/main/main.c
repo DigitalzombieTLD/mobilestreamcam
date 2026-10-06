@@ -7,7 +7,7 @@
 #include "config.h"
 #include "frame_store.h"
 #include "http_stream.h"
-#include "spi_rx.h"
+#include "camera.h"
 #include "wifi_sta.h"
 
 static const char *TAG = "main";
@@ -34,9 +34,9 @@ static void health_cb(void *arg)
     size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
 
     if ((tick % HEALTH_LOG_EVERY_S) == 0) {
-        ESP_LOGI(TAG, "heap free %u, min %u, largest block %u | clients %d | stack hwm httpd %u stream %u spi_rx %u",
+        ESP_LOGI(TAG, "heap free %u, min %u, largest block %u | clients %d | stack hwm httpd %u stream %u camera %u",
                  (unsigned)free_b, (unsigned)esp_get_minimum_free_heap_size(), (unsigned)largest,
-                 http_stream_clients(), stack_hwm("httpd"), stack_hwm("stream"), stack_hwm("spi_rx"));
+                 http_stream_clients(), stack_hwm("httpd"), stack_hwm("stream"), stack_hwm("camera"));
     }
 
     if (free_b < LOW_HEAP_BYTES || largest < LOW_HEAP_BYTES) {
@@ -56,10 +56,10 @@ static void health_cb(void *arg)
 void app_main(void)
 {
     esp_log_level_set("wifi", ESP_LOG_WARN);
-    ESP_LOGI(TAG, "mobilestreamcam ESP32-C3 WiFi MJPEG relay");
+    ESP_LOGI(TAG, "mobilestreamcam ESP32-CAM (OV2640) WiFi MJPEG stream");
     ESP_LOGI(TAG, "free heap at boot: %u", (unsigned)esp_get_free_heap_size());
     frame_store_init();
-    spi_rx_start();
+    camera_start();
     wifi_sta_start(on_got_ip);
 
     const esp_timer_create_args_t targs = { .callback = health_cb, .name = "health" };
