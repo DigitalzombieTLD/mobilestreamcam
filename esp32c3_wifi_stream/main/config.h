@@ -28,10 +28,10 @@
 #define USE_STATIC_IP             1
 #endif
 #ifndef STATIC_IP
-#define STATIC_IP                 "10.153.239.222"
-#define STATIC_GATEWAY            "10.153.239.1"
+#define STATIC_IP                 "10.195.5.222"
+#define STATIC_GATEWAY            "10.195.5.1"
 #define STATIC_NETMASK            "255.255.255.0"
-#define STATIC_DNS                "10.153.239.1"
+#define STATIC_DNS                "10.195.5.1"
 #endif
 
 /* ---- Camera: AI-Thinker ESP32-CAM, OV2640 ----
