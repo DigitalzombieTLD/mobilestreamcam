@@ -12,6 +12,7 @@
 #include "esp_heap_caps.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_camera.h"
 #include "lwip/sockets.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -71,15 +72,17 @@ static esp_err_t status_handler(httpd_req_t *req)
 {
     frame_stats_t st;
     char ip[16];
-    char buf[480];
+    char buf[640];
     frame_store_get_stats(&st);
     wifi_sta_ip_str(ip, sizeof(ip));
     int n = snprintf(buf, sizeof(buf),
         "{\"fps\":%.1f,\"width\":%u,\"height\":%u,\"last_frame_bytes\":%u,"
+        "\"max_frame_bytes\":%u,\"frame_max_bytes\":%u,\"frame_size\":%d,\"jpeg_quality\":%d,"
         "\"frames\":%u,\"bad_frames\":%u,\"dropped_frames\":%u,\"clients\":%d,"
         "\"wifi\":{\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\"},"
         "\"heap_free\":%u,\"heap_min_free\":%u,\"heap_largest_block\":%u,\"uptime_s\":%u}",
         st.fps, st.width, st.height, (unsigned)st.last_size,
+        (unsigned)st.max_size, (unsigned)FRAME_MAX_BYTES, (int)CAM_FRAME_SIZE, (int)CAM_JPEG_QUALITY,
         (unsigned)st.frames, (unsigned)st.bad, (unsigned)st.dropped, (int)atomic_load(&s_clients),
         WIFI_SSID, wifi_sta_rssi(), ip,
         (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(),

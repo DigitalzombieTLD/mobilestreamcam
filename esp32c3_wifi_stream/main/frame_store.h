@@ -18,6 +18,7 @@ typedef struct {
     uint32_t bad;          /* frames rejected (too large / not a JPEG) */
     uint32_t dropped;      /* complete frames dropped because no slot was free */
     uint32_t last_size;
+    uint32_t max_size;     /* largest accepted frame so far (compare with frame_max_bytes) */
     uint16_t width, height;
     float fps;
 } frame_stats_t;
