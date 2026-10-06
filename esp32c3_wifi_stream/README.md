@@ -6,8 +6,8 @@ OV2640). It captures JPEG frames from the onboard OV2640 and serves them over Wi
 run on a XIAO ESP32-C3 receiving frames from the HX6538 over SPI; that receive path has been removed from this build
 so its GPIOs and SPI DMA buffers cannot conflict with the camera).
 
-**Status: this migration and the quality/resolution upgrade have been written but not built or tested on hardware.**
-No ESP-IDF toolchain or board was available. Numbers in the RAM section below date from the old C3 design.
+**Status: this migration has been written but not built or tested on hardware.** No ESP-IDF toolchain or board was
+available when it was made. Numbers in the RAM section below date from the old C3 design.
 
 ## Build and flash
 
@@ -32,59 +32,16 @@ Wi-Fi credentials / static IP: copy overrides into `main/config_local.h` (git-ig
 
 ### Camera pin map
 `main/config.h` contains the standard AI-Thinker OV2640 map (PWDN=32, XCLK=0, SIOD=26, SIOC=27, D0-D7=5,18,19,21,36,39,
-34,35, VSYNC=25, HREF=23, PCLK=22). All `CAM_PIN_*` values, frame size (`CAM_FRAME_SIZE`, default SVGA) and JPEG quality
-(`CAM_JPEG_QUALITY`, default 10) can be overridden in `main/config_local.h`. **Other ESP32-CAM variants (M5Stack, TTGO, Wrover-Kit, ...) need a different
+34,35, VSYNC=25, HREF=23, PCLK=22). All `CAM_PIN_*` values, frame size (`CAM_FRAME_SIZE`, default VGA) and JPEG quality
+can be overridden in `main/config_local.h`. **Other ESP32-CAM variants (M5Stack, TTGO, Wrover-Kit, ...) need a different
 pin map.** GPIO4 (flash LED) and the SD card pins are not used.
 
 ### Design
 * `camera.c` initialises the OV2640 (JPEG, `CAMERA_GRAB_LATEST`, 2 frame buffers in PSRAM), copies each frame into a
   frame-store slot and returns the driver buffer immediately, so a slow HTTP client never holds a camera buffer.
-  The copy (PSRAM to PSRAM, a few ms) is kept on purpose: it guarantees latest-frame semantics and lets the second
-  driver buffer capture the next frame while the previous one is copied.
-* `frame_store.c` keeps 3 slots of `FRAME_MAX_BYTES` (128 KB by default, set by the preset) in PSRAM (`CONFIG_SPIRAM=y`, quad mode, caps-alloc only:
+* `frame_store.c` keeps 3 slots of `FRAME_MAX_BYTES` (96 KB) in PSRAM (`CONFIG_SPIRAM=y`, quad mode, caps-alloc only:
   Wi-Fi/lwIP stay in internal RAM). Larger frames are dropped and counted as bad.
 * `http_stream.c`, `wifi_sta.c` and the config mechanism are unchanged.
-
-## Image quality, resolution and FPS
-
-**Default: SVGA 800x600, JPEG quality 10** (lower number = better quality / bigger frames; was VGA 640x480, quality 12).
-Typical SVGA q10 frames are roughly 30-60 KB. **No hardware was available, so no FPS has been measured.** The default
-is chosen because the OV2640 at 20 MHz XCLK can deliver SVGA JPEG at well above 15 fps and ~40 KB x 12 fps is about
-4 Mbit/s of Wi-Fi traffic, so 10-15 fps is the expectation, not a verified result. The real limit is usually Wi-Fi
-(signal, router, one client) and scene complexity (noisy/detailed scenes give bigger JPEGs).
-
-Select a preset in `main/config_local.h` (git-ignored) and rebuild:
-
-```c
-#define CAM_PRESET 3   /* 1 SVGA q10 (default), 2 VGA q12, 3 XGA q12, 4 SXGA q14, 5 UXGA q16 */
-```
-
-| Preset | Resolution | Quality | `FRAME_MAX_BYTES` | Expected |
-|---|---|---|---|---|
-| 1 (default) | 800x600 | 10 | 128 KB | best balance, target >= 10-15 fps (unmeasured) |
-| 2 | 640x480 | 12 | 96 KB | fastest, previous default |
-| 3 | 1024x768 | 12 | 160 KB | sharper, may fall below 10 fps on weak Wi-Fi |
-| 4 | 1280x1024 | 14 | 224 KB | slow, probably < 8 fps |
-| 5 | 1600x1200 | 16 | 320 KB | slowest, a few fps |
-
-`CAM_FRAME_SIZE`, `CAM_JPEG_QUALITY`, `FRAME_MAX_BYTES`, `FRAME_SLOT_COUNT`, `CAM_FB_COUNT` and `CAM_XCLK_FREQ_HZ` can
-also be overridden individually. Trade-offs: higher resolution / lower quality number -> larger frames -> lower fps and
-more Wi-Fi load; higher quality number -> blockier image but faster. Frames larger than `FRAME_MAX_BYTES` are dropped
-(counted in `bad_frames`) and never written past the slot; a compile-time check keeps slots + camera buffers under 3 MB of
-the 4 MB PSRAM. The lwIP TCP send buffer / window were raised to 23360 / 11680 bytes (internal RAM, ~12 KB more per
-socket) so a 100 KB frame does not need many round trips. Delete `sdkconfig` after changing `sdkconfig.defaults`.
-
-### Checking the result with `/status`
-1. Start the stream in a viewer, wait ~10 s, then open `http://<ip>/status` from the same or another device (it replaces
-   the stream connection, reopen `/` afterwards). `fps` decays to 0 after 3 s without new frames.
-2. `fps` - frames per second captured over the last second. Goal >= 10-15.
-3. `width` / `height` / `jpeg_quality` / `frame_size` - the active settings. `last_frame_bytes` and `max_frame_bytes`
-   - actual JPEG size and the largest seen; `max_frame_bytes` should stay well below `frame_max_bytes` (the slot size).
-4. `bad_frames` increasing -> frames exceeded `frame_max_bytes` (or were not valid JPEG): raise `FRAME_MAX_BYTES`
-   or the quality number. `dropped_frames` increasing -> no free slot (the HTTP side is too slow): lower resolution/quality
-   or improve Wi-Fi (`wifi.rssi`, better than about -70 dBm).
-5. `heap_free` / `heap_min_free` / `heap_largest_block` should stay stable over minutes (no leak).
-If `fps` < 10, go one preset down or raise `CAM_JPEG_QUALITY` by 2; if `fps` is well above 15, go one preset up.
 
 ## RAM budget (historical, from the ESP32-C3 design; the Wi-Fi/lwIP trimming is kept)
 
