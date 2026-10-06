@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "config.h"
@@ -53,11 +54,28 @@ static void health_cb(void *arg)
     }
 }
 
+/* NVS only holds the camera preset id (Wi-Fi config stays in RAM). Erase only for the recoverable cases. */
+static void nvs_init_safe(void)
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS needs erasing (0x%x)", err);
+        err = nvs_flash_erase();
+        if (err == ESP_OK) {
+            err = nvs_flash_init();
+        }
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS init failed (0x%x): camera selection will not be persisted", err);
+    }
+}
+
 void app_main(void)
 {
     esp_log_level_set("wifi", ESP_LOG_WARN);
     ESP_LOGI(TAG, "mobilestreamcam ESP32-CAM (OV2640) WiFi MJPEG stream");
     ESP_LOGI(TAG, "free heap at boot: %u", (unsigned)esp_get_free_heap_size());
+    nvs_init_safe();
     frame_store_init();
     camera_start();
     wifi_sta_start(on_got_ip);

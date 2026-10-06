@@ -60,45 +60,21 @@
 #ifndef CAM_XCLK_FREQ_HZ
 #define CAM_XCLK_FREQ_HZ          20000000
 #endif
-/* Quality / speed presets (select with "#define CAM_PRESET n" in main/config_local.h). Frame rates are ESTIMATES for
- * the OV2640 at 20 MHz XCLK over Wi-Fi and have NOT been measured on hardware: check /status "fps" and tune.
- *   1 = SVGA 800x600,   quality 10  (default; expected to reach the 10-15+ fps goal)
- *   2 = VGA  640x480,   quality 12  (previous default; fastest)
+/* Quality / speed presets. The presets themselves (id, name, resolution, JPEG quality) are the table in camera.c and can be
+ * chosen at runtime on the landing page; the choice is stored in NVS. Frame rates are ESTIMATES for the OV2640 at 20 MHz
+ * XCLK over Wi-Fi and have NOT been measured on hardware: check /status "fps" and tune.
+ *   1 = SVGA 800x600,   quality 10  (expected to reach the 10-15+ fps goal)
+ *   2 = VGA  640x480,   quality 12  (default; fastest)
  *   3 = XGA  1024x768,  quality 12  (sharper; fps depends heavily on Wi-Fi, may drop below 10)
  *   4 = SXGA 1280x1024, quality 14  (slow, probably < 8 fps)
  *   5 = UXGA 1600x1200, quality 16  (slowest, a few fps)
- * CAM_FRAME_SIZE / CAM_JPEG_QUALITY / FRAME_MAX_BYTES can still be overridden individually. */
+ * CAM_PRESET (here or in main/config_local.h) is the preset used while nothing valid is stored in NVS.
+ * The camera driver buffers are always sized for the largest frame size so presets can be switched without a reboot. */
 #ifndef CAM_PRESET
 #define CAM_PRESET                2
 #endif
-#if CAM_PRESET == 2
-#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_VGA
-#define CAM_PRESET_QUALITY        12
-#define CAM_PRESET_MAX_BYTES      (96 * 1024)
-#elif CAM_PRESET == 3
-#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_XGA
-#define CAM_PRESET_QUALITY        12
-#define CAM_PRESET_MAX_BYTES      (160 * 1024)
-#elif CAM_PRESET == 4
-#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_SXGA
-#define CAM_PRESET_QUALITY        14
-#define CAM_PRESET_MAX_BYTES      (224 * 1024)
-#elif CAM_PRESET == 5
-#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_UXGA
-#define CAM_PRESET_QUALITY        16
-#define CAM_PRESET_MAX_BYTES      (320 * 1024)
-#else
-#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_SVGA
-#define CAM_PRESET_QUALITY        10
-#define CAM_PRESET_MAX_BYTES      (128 * 1024)
-#endif
+#define CAM_INIT_FRAME_SIZE       FRAMESIZE_UXGA  /* driver buffers are allocated for this size */
 
-#ifndef CAM_FRAME_SIZE
-#define CAM_FRAME_SIZE            CAM_PRESET_FRAME_SIZE
-#endif
-#ifndef CAM_JPEG_QUALITY
-#define CAM_JPEG_QUALITY          CAM_PRESET_QUALITY   /* 0-63, lower = better quality / bigger frames */
-#endif
 #ifndef CAM_FB_COUNT
 #define CAM_FB_COUNT              2               /* driver frame buffers (PSRAM); 2 = capture overlaps the copy */
 #endif
@@ -106,7 +82,7 @@
 /* ---- Frame slots (PSRAM). The camera task copies each JPEG out of the driver's frame buffer into a slot and
  * returns the buffer immediately, so a slow HTTP client never blocks the camera driver. ---- */
 #ifndef FRAME_MAX_BYTES
-#define FRAME_MAX_BYTES           CAM_PRESET_MAX_BYTES  /* larger frames are dropped (counted as bad), never written past the slot */
+#define FRAME_MAX_BYTES           (320 * 1024)  /* largest preset limit (camera.c); larger frames are dropped (counted as bad), never written past the slot */
 #endif
 #ifndef FRAME_SLOT_COUNT
 #define FRAME_SLOT_COUNT          3            /* 1 being written + 1 latest + 1 being sent */
