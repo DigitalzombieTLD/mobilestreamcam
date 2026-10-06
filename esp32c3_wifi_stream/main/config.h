@@ -60,18 +60,18 @@
 #ifndef CAM_XCLK_FREQ_HZ
 #define CAM_XCLK_FREQ_HZ          20000000
 #endif
-/* Quality / speed presets. The presets themselves (id, name, resolution, JPEG quality) are the table in camera.c and can be
- * chosen at runtime on the landing page; the choice is stored in NVS. Frame rates are ESTIMATES for the OV2640 at 20 MHz
- * XCLK over Wi-Fi and have NOT been measured on hardware: check /status "fps" and tune.
- *   1 = SVGA 800x600,   quality 10  (expected to reach the 10-15+ fps goal)
- *   2 = VGA  640x480,   quality 12  (default; fastest)
- *   3 = XGA  1024x768,  quality 12  (sharper; fps depends heavily on Wi-Fi, may drop below 10)
- *   4 = SXGA 1280x1024, quality 14  (slow, probably < 8 fps)
- *   5 = UXGA 1600x1200, quality 16  (slowest, a few fps)
- * CAM_PRESET (here or in main/config_local.h) is the preset used while nothing valid is stored in NVS.
- * The camera driver buffers are always sized for the largest frame size so presets can be switched without a reboot. */
-#ifndef CAM_PRESET
-#define CAM_PRESET                2
+/* Resolution and JPEG quality are independent runtime settings (landing page, stored in NVS). The supported resolutions are
+ * the table in camera.c; JPEG quality is 10..40 (lower number = better image and larger frames; the esp32-camera range is
+ * 0..63, values below 10 overflow the frame limits and values above 40 are visibly poor). Frame rates are ESTIMATES and have
+ * NOT been measured on hardware: check /status "fps".
+ * CAM_RESOLUTION (resolution id from camera.c, 2 = VGA) and CAM_JPEG_QUALITY are used while nothing valid is stored in NVS.
+ * Both can be overridden in main/config_local.h. Invalid values fall back to VGA / 12.
+ * The camera driver buffers are always sized for the largest frame size so settings can be switched without a reboot. */
+#ifndef CAM_RESOLUTION
+#define CAM_RESOLUTION            2
+#endif
+#ifndef CAM_JPEG_QUALITY
+#define CAM_JPEG_QUALITY          12
 #endif
 #define CAM_INIT_FRAME_SIZE       FRAMESIZE_UXGA  /* driver buffers are allocated for this size */
 

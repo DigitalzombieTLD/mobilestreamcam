@@ -41,58 +41,64 @@ static const char INDEX_HEAD[] =
     "<title>mobilestreamcam</title>"
     "<style>body{margin:0;background:#111;color:#ccc;font-family:sans-serif;text-align:center}"
     "img{max-width:100%;height:auto}a{color:#8cf}#cam{margin:8px}small{display:block;max-width:34em;margin:4px auto;color:#999}"
-    "#msg.err{color:#f88}</style></head><body>"
+    "input[type=number]{width:4em}#msg.err{color:#f88}</style></head><body>"
     "<img src=\"/stream\" alt=\"stream\">"
     "<div id=\"cam\">Current: <b id=\"cur\">";
 static const char INDEX_MID[] =
-    "</b><br><select id=\"sel\">";
+    "</b><br>Resolution <select id=\"res\">";
+static const char INDEX_QUALITY[] =
+    "</select> JPEG quality <input id=\"q\" type=\"number\" min=\"" CAM_STR(CAMERA_QUALITY_MIN) "\" max=\""
+    CAM_STR(CAMERA_QUALITY_MAX) "\" step=\"1\" value=\"";
 static const char INDEX_TAIL[] =
-    "</select> <button id=\"btn\" type=\"button\">Apply</button>"
+    "\"> <button id=\"btn\" type=\"button\">Apply</button>"
     "<div id=\"msg\"></div>"
-    "<small>Lower JPEG quality number = higher image quality and larger frames. Larger resolutions and sizes "
-    "lower the frame rate.</small>"
+    "<small>JPEG quality " CAM_STR(CAMERA_QUALITY_MIN) "-" CAM_STR(CAMERA_QUALITY_MAX) ": a lower number = higher image quality "
+    "and larger frames. Larger resolutions and lower quality numbers lower the frame rate.</small>"
     "<small id=\"per\"></small></div>"
     "<p><a href=\"/snapshot.jpg\">snapshot</a> | <a href=\"/status\">status</a></p>"
     "<script>"
-    "var s=document.getElementById('sel'),b=document.getElementById('btn'),m=document.getElementById('msg');"
+    "var s=document.getElementById('res'),q=document.getElementById('q'),b=document.getElementById('btn'),"
+    "m=document.getElementById('msg');"
     "b.onclick=function(){b.disabled=true;m.className='';m.textContent='Applying...';"
-    "fetch('/camera/preset',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},"
-    "body:'preset='+s.value}).then(function(r){return r.json()}).then(function(j){"
-    "if(j.preset){var o=s.querySelector('option[value=\"'+j.preset+'\"]');"
-    "document.getElementById('cur').textContent=o?o.textContent:j.name;s.value=j.preset;}"
+    "fetch('/camera/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+    "body:'resolution='+encodeURIComponent(s.value)+'&quality='+encodeURIComponent(q.value)})"
+    ".then(function(r){return r.json()}).then(function(j){"
+    "if(j.resolution_id){s.value=j.resolution_id;q.value=j.jpeg_quality;"
+    "document.getElementById('cur').textContent=j.name+' '+j.width+'x'+j.height+', JPEG quality '+j.jpeg_quality;}"
     "if(j.ok){m.textContent=j.saved?'Applied and saved.':'Applied, but NOT saved: '+j.error;"
     "if(!j.saved)m.className='err';}"
-    "else{m.className='err';m.textContent='Failed: '+j.error+' (still using the previous setting)';}"
+    "else{m.className='err';m.textContent='Failed: '+j.error+' (still using the previous settings)';}"
     "}).catch(function(){m.className='err';m.textContent='Request failed';}).then(function(){b.disabled=false;});};"
     "</script></body></html>";
 
-static void format_preset_text(char *out, size_t n, const camera_preset_t *p)
-{
-    snprintf(out, n, "%u: %s %ux%u, JPEG quality %u", (unsigned)p->id, p->name, (unsigned)p->width,
-             (unsigned)p->height, (unsigned)p->quality);
-}
-
 static esp_err_t index_handler(httpd_req_t *req)
 {
-    char line[128];
-    char opt[192];
-    const camera_preset_t *act = camera_active_preset();
+    char buf[160];
+    camera_settings_t act;
+    camera_get_settings(&act);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     esp_err_t r = httpd_resp_send_chunk(req, INDEX_HEAD, HTTPD_RESP_USE_STRLEN);
-    format_preset_text(line, sizeof(line), act);
+    snprintf(buf, sizeof(buf), "%s %ux%u, JPEG quality %u", act.resolution->name, (unsigned)act.resolution->width,
+             (unsigned)act.resolution->height, (unsigned)act.quality);
     if (r == ESP_OK) {
-        r = httpd_resp_send_chunk(req, line, HTTPD_RESP_USE_STRLEN);
+        r = httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
     }
     if (r == ESP_OK) {
         r = httpd_resp_send_chunk(req, INDEX_MID, HTTPD_RESP_USE_STRLEN);
     }
-    for (int id = 1; id <= CAMERA_PRESET_COUNT && r == ESP_OK; id++) {
-        const camera_preset_t *p = camera_preset_by_id(id);
-        format_preset_text(line, sizeof(line), p);
-        snprintf(opt, sizeof(opt), "<option value=\"%u\"%s>%s</option>", (unsigned)p->id,
-                 p == act ? " selected" : "", line);
-        r = httpd_resp_send_chunk(req, opt, HTTPD_RESP_USE_STRLEN);
+    for (int i = 0; i < CAMERA_RESOLUTION_COUNT && r == ESP_OK; i++) {
+        const camera_resolution_t *c = camera_resolution_at(i);
+        snprintf(buf, sizeof(buf), "<option value=\"%u\"%s>%s %ux%u</option>", (unsigned)c->id,
+                 c == act.resolution ? " selected" : "", c->name, (unsigned)c->width, (unsigned)c->height);
+        r = httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
+    }
+    if (r == ESP_OK) {
+        r = httpd_resp_send_chunk(req, INDEX_QUALITY, HTTPD_RESP_USE_STRLEN);
+    }
+    if (r == ESP_OK) {
+        snprintf(buf, sizeof(buf), "%u", (unsigned)act.quality);
+        r = httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
     }
     if (r == ESP_OK) {
         r = httpd_resp_send_chunk(req, INDEX_TAIL, HTTPD_RESP_USE_STRLEN);
@@ -111,20 +117,44 @@ static esp_err_t index_handler(httpd_req_t *req)
     return r;
 }
 
-#define PRESET_BODY_MAX 24
+#define SETTINGS_BODY_MAX 40
 
-/* POST /camera/preset  body "preset=<id>"; only ids of the firmware preset table are accepted */
-static esp_err_t preset_handler(httpd_req_t *req)
+/* Parse "<key>=<1-3 digits>" at *p, advance past it; false if malformed */
+static bool parse_field(const char **p, const char *key, int *value)
 {
-    char body[PRESET_BODY_MAX + 1];
+    size_t kl = strlen(key);
+    if (strncmp(*p, key, kl) != 0 || (*p)[kl] != '=') {
+        return false;
+    }
+    const char *c = *p + kl + 1;
+    int v = 0, digits = 0;
+    while (*c >= '0' && *c <= '9') {
+        if (++digits > 3) {
+            return false;
+        }
+        v = v * 10 + (*c++ - '0');
+    }
+    if (digits == 0) {
+        return false;
+    }
+    *value = v;
+    *p = c;
+    return true;
+}
+
+/* POST /camera/settings  body "resolution=<id>&quality=<n>"; only supported resolution ids and the documented quality
+ * range are accepted */
+static esp_err_t settings_handler(httpd_req_t *req)
+{
+    char body[SETTINGS_BODY_MAX + 1];
     char json[256];
-    int id = 0;
+    int res = 0, quality = 0;
     bool saved = false;
     const char *status = "200 OK";
     const char *err_text = "";
     esp_err_t e = ESP_ERR_INVALID_ARG;
 
-    if (req->content_len == 0 || req->content_len > PRESET_BODY_MAX) {
+    if (req->content_len == 0 || req->content_len > SETTINGS_BODY_MAX) {
         status = "400 Bad Request";
         err_text = "invalid request body";
     } else {
@@ -144,25 +174,17 @@ static esp_err_t preset_handler(httpd_req_t *req)
         }
         body[got] = 0;
         const char *p = body;
-        if (strncmp(p, "preset=", 7) != 0 || p[7] == 0) {
+        if (!parse_field(&p, "resolution", &res) || *p++ != '&' || !parse_field(&p, "quality", &quality) || *p != 0) {
             status = "400 Bad Request";
-            err_text = "expected preset=<id>";
+            err_text = "expected resolution=<id>&quality=<n>";
+        } else if (!camera_resolution_by_id(res)) {
+            status = "400 Bad Request";
+            err_text = "unsupported resolution";
+        } else if (!camera_quality_valid(quality)) {
+            status = "400 Bad Request";
+            err_text = "quality out of range (" CAM_STR(CAMERA_QUALITY_MIN) "-" CAM_STR(CAMERA_QUALITY_MAX) ")";
         } else {
-            p += 7;
-            bool digits = true;
-            for (const char *c = p; *c; c++) {
-                if (*c < '0' || *c > '9' || c - p >= 3) {
-                    digits = false;
-                    break;
-                }
-                id = id * 10 + (*c - '0');
-            }
-            if (!digits || !camera_preset_by_id(id)) {
-                status = "400 Bad Request";
-                err_text = "unknown preset";
-            } else {
-                e = camera_set_preset(id, &saved);
-            }
+            e = camera_set_settings(res, quality, &saved);
         }
     }
 
@@ -184,12 +206,14 @@ static esp_err_t preset_handler(httpd_req_t *req)
         }
     }
 
-    const camera_preset_t *act = camera_active_preset();
+    camera_settings_t act;
+    camera_get_settings(&act);
     int n = snprintf(json, sizeof(json),
-                     "{\"ok\":%s,\"saved\":%s,\"preset\":%u,\"name\":\"%s\",\"width\":%u,\"height\":%u,"
+                     "{\"ok\":%s,\"saved\":%s,\"resolution_id\":%u,\"name\":\"%s\",\"width\":%u,\"height\":%u,"
                      "\"jpeg_quality\":%u,\"error\":\"%s\"}",
-                     e == ESP_OK ? "true" : "false", saved ? "true" : "false", (unsigned)act->id, act->name,
-                     (unsigned)act->width, (unsigned)act->height, (unsigned)act->quality, err_text);
+                     e == ESP_OK ? "true" : "false", saved ? "true" : "false", (unsigned)act.resolution->id,
+                     act.resolution->name, (unsigned)act.resolution->width, (unsigned)act.resolution->height,
+                     (unsigned)act.quality, err_text);
     httpd_resp_set_status(req, status);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -224,8 +248,9 @@ static esp_err_t status_handler(httpd_req_t *req)
     uint64_t tx_frames;
     uint64_t tx_jpeg_bytes;
     char ip[16];
-    static char buf[1280];   /* handlers run one at a time on the httpd task */
-    const camera_preset_t *cp = camera_active_preset();
+    static char buf[1536];   /* handlers run one at a time on the httpd task */
+    camera_settings_t cs;
+    camera_get_settings(&cs);
     frame_store_get_stats(&st);
     wifi_sta_ip_str(ip, sizeof(ip));
     wifi_sta_get_diagnostics(&wifi);
@@ -236,7 +261,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     int n = snprintf(buf, sizeof(buf),
         "{\"fps\":%.1f,\"width\":%u,\"height\":%u,\"last_frame_bytes\":%u,"
         "\"max_frame_bytes\":%u,\"frame_max_bytes\":%u,\"frame_size\":%d,\"jpeg_quality\":%d,"
-        "\"preset\":%u,\"preset_name\":\"%s\",\"preset_width\":%u,\"preset_height\":%u,\"settings_persistent\":%s,"
+        "\"resolution_id\":%u,\"resolution_name\":\"%s\",\"resolution_width\":%u,\"resolution_height\":%u,\"settings_persistent\":%s,"
         "\"frames\":%u,\"bad_frames\":%u,\"dropped_frames\":%u,\"clients\":%d,"
         "\"tx_frames\":%llu,\"tx_jpeg_bytes\":%llu,"
         "\"wifi\":{\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"connected\":%s,\"associated\":%s,"
@@ -246,8 +271,8 @@ static esp_err_t status_handler(httpd_req_t *req)
         "\"last_disconnect_reason\":%d},"
         "\"heap_free\":%u,\"heap_min_free\":%u,\"heap_largest_block\":%u,\"uptime_s\":%u}",
         st.fps, st.width, st.height, (unsigned)st.last_size,
-        (unsigned)st.max_size, (unsigned)cp->max_bytes, cp->frame_size, (int)cp->quality,
-        (unsigned)cp->id, cp->name, (unsigned)cp->width, (unsigned)cp->height,
+        (unsigned)st.max_size, (unsigned)cs.resolution->max_bytes, cs.resolution->frame_size, (int)cs.quality,
+        (unsigned)cs.resolution->id, cs.resolution->name, (unsigned)cs.resolution->width, (unsigned)cs.resolution->height,
         camera_settings_persistent() ? "true" : "false",
         (unsigned)st.frames, (unsigned)st.bad, (unsigned)st.dropped, (int)atomic_load(&s_clients),
         (unsigned long long)tx_frames, (unsigned long long)tx_jpeg_bytes,
@@ -394,7 +419,7 @@ void http_stream_start(void)
         { .uri = "/stream",       .method = HTTP_GET, .handler = stream_handler },
         { .uri = "/snapshot.jpg", .method = HTTP_GET, .handler = snapshot_handler },
         { .uri = "/status",       .method = HTTP_GET, .handler = status_handler },
-        { .uri = "/camera/preset", .method = HTTP_POST, .handler = preset_handler },
+        { .uri = "/camera/settings", .method = HTTP_POST, .handler = settings_handler },
         { .uri = "/favicon.ico",  .method = HTTP_GET, .handler = favicon_handler },
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {

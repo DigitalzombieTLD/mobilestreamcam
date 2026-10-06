@@ -54,7 +54,7 @@ static void health_cb(void *arg)
     }
 }
 
-/* NVS only holds the camera preset id (Wi-Fi config stays in RAM). Erase only for the recoverable cases. */
+/* NVS only holds the camera resolution and JPEG quality (Wi-Fi config stays in RAM). Erase only for the recoverable cases. */
 static void nvs_init_safe(void)
 {
     esp_err_t err = nvs_flash_init();
