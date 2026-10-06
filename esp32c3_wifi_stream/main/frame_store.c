@@ -90,9 +90,6 @@ bool frame_store_publish(uint32_t offset, uint32_t size, frame_slot_t **next)
 
         s_stats.frames++;
         s_stats.last_size = size;
-        if (size > s_stats.max_size) {
-            s_stats.max_size = size;
-        }
         s_win_frames++;
         int64_t now = esp_timer_get_time();
         if (now - s_win_start_us >= 1000000) {
