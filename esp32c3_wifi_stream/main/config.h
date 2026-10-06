@@ -17,10 +17,10 @@
 #define WIFI_SSID                 "SteamCam"
 #endif
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD             "StreamCam123"   /* "" for an open network */
+#define WIFI_PASSWORD             "SchachtCam123!"   /* "" for an open network */
 #endif
 #ifndef DEVICE_HOSTNAME
-#define DEVICE_HOSTNAME           "mobilestreamcam"       /* also advertised as <hostname>.local (mDNS) */
+#define DEVICE_HOSTNAME           "SchachtCam"       /* also advertised as <hostname>.local (mDNS) */
 #endif
 
 /* Optional static IP (0 = DHCP) */
