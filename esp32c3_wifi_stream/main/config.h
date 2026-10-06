@@ -25,7 +25,7 @@
 
 /* Optional static IP (0 = DHCP) */
 #ifndef USE_STATIC_IP
-#define USE_STATIC_IP             1
+#define USE_STATIC_IP             0
 #endif
 #ifndef STATIC_IP
 #define STATIC_IP                 "10.153.239.222"
@@ -69,7 +69,7 @@
  *   5 = UXGA 1600x1200, quality 16  (slowest, a few fps)
  * CAM_FRAME_SIZE / CAM_JPEG_QUALITY / FRAME_MAX_BYTES can still be overridden individually. */
 #ifndef CAM_PRESET
-#define CAM_PRESET                1
+#define CAM_PRESET                2
 #endif
 #if CAM_PRESET == 2
 #define CAM_PRESET_FRAME_SIZE     FRAMESIZE_VGA
