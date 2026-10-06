@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 #include "config.h"
 #include "frame_store.h"
+#include "camera.h"
 #include "wifi_sta.h"
 #include "http_stream.h"
 
@@ -34,20 +35,165 @@ static uint64_t s_tx_jpeg_bytes;
 
 #define STREAM_TASK_STACK 3584
 
-static const char INDEX_HTML[] =
+static const char INDEX_HEAD[] =
     "<!doctype html><html><head><meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
     "<title>mobilestreamcam</title>"
     "<style>body{margin:0;background:#111;color:#ccc;font-family:sans-serif;text-align:center}"
-    "img{max-width:100%;height:auto}a{color:#8cf}</style></head><body>"
+    "img{max-width:100%;height:auto}a{color:#8cf}#cam{margin:8px}small{display:block;max-width:34em;margin:4px auto;color:#999}"
+    "#msg.err{color:#f88}</style></head><body>"
     "<img src=\"/stream\" alt=\"stream\">"
+    "<div id=\"cam\">Current: <b id=\"cur\">";
+static const char INDEX_MID[] =
+    "</b><br><select id=\"sel\">";
+static const char INDEX_TAIL[] =
+    "</select> <button id=\"btn\" type=\"button\">Apply</button>"
+    "<div id=\"msg\"></div>"
+    "<small>Lower JPEG quality number = higher image quality and larger frames. Larger resolutions and sizes "
+    "lower the frame rate.</small>"
+    "<small id=\"per\"></small></div>"
     "<p><a href=\"/snapshot.jpg\">snapshot</a> | <a href=\"/status\">status</a></p>"
-    "</body></html>";
+    "<script>"
+    "var s=document.getElementById('sel'),b=document.getElementById('btn'),m=document.getElementById('msg');"
+    "b.onclick=function(){b.disabled=true;m.className='';m.textContent='Applying...';"
+    "fetch('/camera/preset',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+    "body:'preset='+s.value}).then(function(r){return r.json()}).then(function(j){"
+    "if(j.preset){var o=s.querySelector('option[value=\"'+j.preset+'\"]');"
+    "document.getElementById('cur').textContent=o?o.textContent:j.name;s.value=j.preset;}"
+    "if(j.ok){m.textContent=j.saved?'Applied and saved.':'Applied, but NOT saved: '+j.error;"
+    "if(!j.saved)m.className='err';}"
+    "else{m.className='err';m.textContent='Failed: '+j.error+' (still using the previous setting)';}"
+    "}).catch(function(){m.className='err';m.textContent='Request failed';}).then(function(){b.disabled=false;});};"
+    "</script></body></html>";
+
+static void format_preset_text(char *out, size_t n, const camera_preset_t *p)
+{
+    snprintf(out, n, "%u: %s %ux%u, JPEG quality %u", (unsigned)p->id, p->name, (unsigned)p->width,
+             (unsigned)p->height, (unsigned)p->quality);
+}
 
 static esp_err_t index_handler(httpd_req_t *req)
 {
+    char line[128];
+    char opt[192];
+    const camera_preset_t *act = camera_active_preset();
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, INDEX_HTML, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t r = httpd_resp_send_chunk(req, INDEX_HEAD, HTTPD_RESP_USE_STRLEN);
+    format_preset_text(line, sizeof(line), act);
+    if (r == ESP_OK) {
+        r = httpd_resp_send_chunk(req, line, HTTPD_RESP_USE_STRLEN);
+    }
+    if (r == ESP_OK) {
+        r = httpd_resp_send_chunk(req, INDEX_MID, HTTPD_RESP_USE_STRLEN);
+    }
+    for (int id = 1; id <= CAMERA_PRESET_COUNT && r == ESP_OK; id++) {
+        const camera_preset_t *p = camera_preset_by_id(id);
+        format_preset_text(line, sizeof(line), p);
+        snprintf(opt, sizeof(opt), "<option value=\"%u\"%s>%s</option>", (unsigned)p->id,
+                 p == act ? " selected" : "", line);
+        r = httpd_resp_send_chunk(req, opt, HTTPD_RESP_USE_STRLEN);
+    }
+    if (r == ESP_OK) {
+        r = httpd_resp_send_chunk(req, INDEX_TAIL, HTTPD_RESP_USE_STRLEN);
+    }
+    if (r == ESP_OK) {
+        if (!camera_settings_persistent()) {
+            /* placed after the page: the script above only reads the DOM on click */
+            r = httpd_resp_send_chunk(req, "<script>document.getElementById('per').textContent="
+                                           "'Persistent storage unavailable: the selection resets on reboot.';</script>",
+                                      HTTPD_RESP_USE_STRLEN);
+        }
+    }
+    if (r == ESP_OK) {
+        r = httpd_resp_send_chunk(req, NULL, 0);
+    }
+    return r;
+}
+
+#define PRESET_BODY_MAX 24
+
+/* POST /camera/preset  body "preset=<id>"; only ids of the firmware preset table are accepted */
+static esp_err_t preset_handler(httpd_req_t *req)
+{
+    char body[PRESET_BODY_MAX + 1];
+    char json[256];
+    int id = 0;
+    bool saved = false;
+    const char *status = "200 OK";
+    const char *err_text = "";
+    esp_err_t e = ESP_ERR_INVALID_ARG;
+
+    if (req->content_len == 0 || req->content_len > PRESET_BODY_MAX) {
+        status = "400 Bad Request";
+        err_text = "invalid request body";
+    } else {
+        size_t got = 0;
+        while (got < req->content_len) {
+            int n = httpd_req_recv(req, body + got, req->content_len - got);
+            if (n == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            if (n <= 0) {
+                break;
+            }
+            got += n;
+        }
+        if (got != req->content_len) {
+            return ESP_FAIL;
+        }
+        body[got] = 0;
+        const char *p = body;
+        if (strncmp(p, "preset=", 7) != 0 || p[7] == 0) {
+            status = "400 Bad Request";
+            err_text = "expected preset=<id>";
+        } else {
+            p += 7;
+            bool digits = true;
+            for (const char *c = p; *c; c++) {
+                if (*c < '0' || *c > '9' || c - p >= 3) {
+                    digits = false;
+                    break;
+                }
+                id = id * 10 + (*c - '0');
+            }
+            if (!digits || !camera_preset_by_id(id)) {
+                status = "400 Bad Request";
+                err_text = "unknown preset";
+            } else {
+                e = camera_set_preset(id, &saved);
+            }
+        }
+    }
+
+    if (*err_text == 0) {
+        if (e == ESP_OK) {
+            err_text = saved ? "" : (camera_settings_persistent() ? "saving to NVS failed" : "persistent storage unavailable");
+        } else if (e == ESP_ERR_TIMEOUT) {
+            status = "503 Service Unavailable";
+            err_text = "camera busy, try again";
+        } else if (e == ESP_ERR_INVALID_STATE) {
+            status = "503 Service Unavailable";
+            err_text = "camera not running";
+        } else if (e == ESP_ERR_INVALID_RESPONSE) {
+            status = "500 Internal Server Error";
+            err_text = "camera did not deliver the new frame size";
+        } else {
+            status = "500 Internal Server Error";
+            err_text = "camera rejected the setting";
+        }
+    }
+
+    const camera_preset_t *act = camera_active_preset();
+    int n = snprintf(json, sizeof(json),
+                     "{\"ok\":%s,\"saved\":%s,\"preset\":%u,\"name\":\"%s\",\"width\":%u,\"height\":%u,"
+                     "\"jpeg_quality\":%u,\"error\":\"%s\"}",
+                     e == ESP_OK ? "true" : "false", saved ? "true" : "false", (unsigned)act->id, act->name,
+                     (unsigned)act->width, (unsigned)act->height, (unsigned)act->quality, err_text);
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (n > 0 && n < (int)sizeof(json)) ? n : 0);
 }
 
 static esp_err_t favicon_handler(httpd_req_t *req)
@@ -78,7 +224,8 @@ static esp_err_t status_handler(httpd_req_t *req)
     uint64_t tx_frames;
     uint64_t tx_jpeg_bytes;
     char ip[16];
-    char buf[1024];
+    static char buf[1280];   /* handlers run one at a time on the httpd task */
+    const camera_preset_t *cp = camera_active_preset();
     frame_store_get_stats(&st);
     wifi_sta_ip_str(ip, sizeof(ip));
     wifi_sta_get_diagnostics(&wifi);
@@ -89,6 +236,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     int n = snprintf(buf, sizeof(buf),
         "{\"fps\":%.1f,\"width\":%u,\"height\":%u,\"last_frame_bytes\":%u,"
         "\"max_frame_bytes\":%u,\"frame_max_bytes\":%u,\"frame_size\":%d,\"jpeg_quality\":%d,"
+        "\"preset\":%u,\"preset_name\":\"%s\",\"preset_width\":%u,\"preset_height\":%u,\"settings_persistent\":%s,"
         "\"frames\":%u,\"bad_frames\":%u,\"dropped_frames\":%u,\"clients\":%d,"
         "\"tx_frames\":%llu,\"tx_jpeg_bytes\":%llu,"
         "\"wifi\":{\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"connected\":%s,\"associated\":%s,"
@@ -98,7 +246,9 @@ static esp_err_t status_handler(httpd_req_t *req)
         "\"last_disconnect_reason\":%d},"
         "\"heap_free\":%u,\"heap_min_free\":%u,\"heap_largest_block\":%u,\"uptime_s\":%u}",
         st.fps, st.width, st.height, (unsigned)st.last_size,
-        (unsigned)st.max_size, (unsigned)FRAME_MAX_BYTES, (int)CAM_FRAME_SIZE, (int)CAM_JPEG_QUALITY,
+        (unsigned)st.max_size, (unsigned)cp->max_bytes, cp->frame_size, (int)cp->quality,
+        (unsigned)cp->id, cp->name, (unsigned)cp->width, (unsigned)cp->height,
+        camera_settings_persistent() ? "true" : "false",
         (unsigned)st.frames, (unsigned)st.bad, (unsigned)st.dropped, (int)atomic_load(&s_clients),
         (unsigned long long)tx_frames, (unsigned long long)tx_jpeg_bytes,
         WIFI_SSID, wifi.rssi, ip, wifi.connected ? "true" : "false", wifi.associated ? "true" : "false",
@@ -228,7 +378,7 @@ void http_stream_start(void)
     /* Allow one stream plus another HTTP request. httpd uses 3 sockets internally, so
      * LWIP_MAX_SOCKETS (sdkconfig.defaults) must be >= 3 + max_open_sockets. */
     cfg.max_open_sockets = 2;
-    cfg.max_uri_handlers = 5;
+    cfg.max_uri_handlers = 6;
     cfg.max_resp_headers = 5;
     cfg.lru_purge_enable = true;  /* a new connection replaces the (stale) one */
     cfg.send_wait_timeout = 10;   /* tolerate brief stalls (EAGAIN), drop clients that stall longer */
@@ -244,6 +394,7 @@ void http_stream_start(void)
         { .uri = "/stream",       .method = HTTP_GET, .handler = stream_handler },
         { .uri = "/snapshot.jpg", .method = HTTP_GET, .handler = snapshot_handler },
         { .uri = "/status",       .method = HTTP_GET, .handler = status_handler },
+        { .uri = "/camera/preset", .method = HTTP_POST, .handler = preset_handler },
         { .uri = "/favicon.ico",  .method = HTTP_GET, .handler = favicon_handler },
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {

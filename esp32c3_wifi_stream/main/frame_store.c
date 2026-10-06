@@ -21,7 +21,7 @@ static frame_stats_t s_stats;
 static int64_t s_win_start_us;
 static uint32_t s_win_frames;
 
-static void parse_jpeg_size(const uint8_t *d, uint32_t len, uint16_t *w, uint16_t *h)
+void frame_store_parse_jpeg_size(const uint8_t *d, uint32_t len, uint16_t *w, uint16_t *h)
 {
     uint32_t i = 2;
     while (i + 9 < len && i < 2048) {
@@ -86,7 +86,7 @@ bool frame_store_publish(uint32_t offset, uint32_t size, frame_slot_t **next)
         s_writer->size = size;
         s_writer->seq = ++s_seq;
         s_writer->is_latest = true;
-        parse_jpeg_size(s_writer->data + offset, size, &s_stats.width, &s_stats.height);
+        frame_store_parse_jpeg_size(s_writer->data + offset, size, &s_stats.width, &s_stats.height);
 
         s_stats.frames++;
         s_stats.last_size = size;

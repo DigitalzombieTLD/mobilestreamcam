@@ -25,6 +25,9 @@ typedef struct {
 
 void frame_store_init(void);
 
+/* Read the width/height from the SOF marker of a JPEG (leaves them untouched if not found) */
+void frame_store_parse_jpeg_size(const uint8_t *d, uint32_t len, uint16_t *w, uint16_t *h);
+
 /* Writer side (camera task) */
 frame_slot_t *frame_store_writer_slot(void);
 /* Publish the writer slot as the latest frame. On success *next receives the new writer slot.

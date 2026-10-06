@@ -32,16 +32,46 @@ Wi-Fi credentials / static IP: copy overrides into `main/config_local.h` (git-ig
 
 ### Camera pin map
 `main/config.h` contains the standard AI-Thinker OV2640 map (PWDN=32, XCLK=0, SIOD=26, SIOC=27, D0-D7=5,18,19,21,36,39,
-34,35, VSYNC=25, HREF=23, PCLK=22). All `CAM_PIN_*` values, frame size (`CAM_FRAME_SIZE`, default VGA) and JPEG quality
+34,35, VSYNC=25, HREF=23, PCLK=22). All `CAM_PIN_*` values and `CAM_PRESET` (the preset used until one is stored, default 2 = VGA)
 can be overridden in `main/config_local.h`. **Other ESP32-CAM variants (M5Stack, TTGO, Wrover-Kit, ...) need a different
 pin map.** GPIO4 (flash LED) and the SD card pins are not used.
 
 ### Design
 * `camera.c` initialises the OV2640 (JPEG, `CAMERA_GRAB_LATEST`, 2 frame buffers in PSRAM), copies each frame into a
   frame-store slot and returns the driver buffer immediately, so a slow HTTP client never holds a camera buffer.
-* `frame_store.c` keeps 3 slots of `FRAME_MAX_BYTES` (96 KB) in PSRAM (`CONFIG_SPIRAM=y`, quad mode, caps-alloc only:
+* `frame_store.c` keeps 3 slots of `FRAME_MAX_BYTES` (320 KB, the largest preset limit) in PSRAM (`CONFIG_SPIRAM=y`, quad mode, caps-alloc only:
   Wi-Fi/lwIP stay in internal RAM). Larger frames are dropped and counted as bad.
-* `http_stream.c`, `wifi_sta.c` and the config mechanism are unchanged.
+* `http_stream.c` serves the landing page and `/camera/preset`; `wifi_sta.c` and the config mechanism are unchanged.
+
+### Quality / resolution presets
+Open `http://<device>/` (without `/stream` or `/status`): the page shows the active preset, its resolution and JPEG
+quality, and a selector with **Apply**. A **lower JPEG quality number means higher image quality and larger frames**
+(and a lower frame rate). `/stream`, `/snapshot.jpg` and `/status` keep working as before.
+
+| Id | Name | Resolution | JPEG quality | Max frame |
+|----|------|-----------|--------------|-----------|
+| 1 | SVGA | 800x600 | 10 | 128 KB |
+| 2 | VGA (default) | 640x480 | 12 | 96 KB |
+| 3 | XGA | 1024x768 | 12 | 160 KB |
+| 4 | SXGA | 1280x1024 | 14 | 224 KB |
+| 5 | UXGA | 1600x1200 | 16 | 320 KB |
+
+* Applying a preset takes effect without a reboot (sensor frame size/quality are changed through the `esp32-camera`
+  sensor API while the camera task is not capturing; the camera driver buffers are always allocated for UXGA).
+  The change is confirmed only after a frame of the new size was received. Otherwise the previous preset is restored,
+  the page reports the error and nothing is stored. The running stream is not restarted.
+* Persistence: only the preset id (1-5) is stored in NVS (namespace `camcfg`, key `preset`) after a successful
+  change and loaded before the camera is initialised at boot. Invalid/missing stored values fall back to `CAM_PRESET`.
+  NVS is initialised at startup and erased only when ESP-IDF reports `NO_FREE_PAGES`/`NEW_VERSION_FOUND`.
+  If NVS is unusable the preset still applies but the page says it was not saved. Wi-Fi configuration stays in RAM.
+* HTTP API: `POST /camera/preset` with body `preset=<id>` (at most 24 bytes, ids 1-5 only), JSON response
+  `{"ok","saved","preset","name","width","height","jpeg_quality","error"}`. Errors: 400 invalid input, 503 camera
+  busy (waits at most 3 s) or not running, 500 camera rejected the change. `/status` additionally reports `preset`,
+  `preset_name`, `preset_width`, `preset_height`, `settings_persistent`; `frame_size`, `jpeg_quality` and
+  `frame_max_bytes` now show the active runtime values.
+* Build/flash is unchanged (`idf.py build flash`); the `nvs_flash` component is part of ESP-IDF and the default
+  single-app partition table already contains an `nvs` partition. Existing `sdkconfig` files need no change.
+* **Not built or tested**: no ESP-IDF toolchain or hardware was available, so none of this is hardware-verified.
 
 ## RAM budget (historical, from the ESP32-C3 design; the Wi-Fi/lwIP trimming is kept)
 
