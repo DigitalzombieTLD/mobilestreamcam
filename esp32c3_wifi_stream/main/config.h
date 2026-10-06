@@ -14,7 +14,7 @@
 
 /* ---- WiFi ---- */
 #ifndef WIFI_SSID
-#define WIFI_SSID                 "SteamCam"
+#define WIFI_SSID                 "SchachtCam"
 #endif
 #ifndef WIFI_PASSWORD
 #define WIFI_PASSWORD             "SchachtCam123!"   /* "" for an open network */
