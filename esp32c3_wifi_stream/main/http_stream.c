@@ -197,9 +197,9 @@ void http_stream_start(void)
     }
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.server_port = HTTP_PORT;
-    /* Only one browser/stream is ever needed. httpd uses 3 sockets internally, so
+    /* Allow one stream plus another HTTP request. httpd uses 3 sockets internally, so
      * LWIP_MAX_SOCKETS (sdkconfig.defaults) must be >= 3 + max_open_sockets. */
-    cfg.max_open_sockets = 1;
+    cfg.max_open_sockets = 2;
     cfg.max_uri_handlers = 5;
     cfg.max_resp_headers = 5;
     cfg.lru_purge_enable = true;  /* a new connection replaces the (stale) one */
