@@ -20,12 +20,12 @@
 #define WIFI_PASSWORD             "SchachtCam123!"   /* "" for an open network */
 #endif
 #ifndef DEVICE_HOSTNAME
-#define DEVICE_HOSTNAME           "SchachtCam"       /* also advertised as <hostname>.local (mDNS) */
+#define DEVICE_HOSTNAME           "schachtcam"       /* also advertised as <hostname>.local (mDNS) */
 #endif
 
 /* Optional static IP (0 = DHCP) */
 #ifndef USE_STATIC_IP
-#define USE_STATIC_IP             1
+#define USE_STATIC_IP             0
 #endif
 #ifndef STATIC_IP
 #define STATIC_IP                 "10.195.5.222"
