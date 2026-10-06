@@ -1,18 +1,19 @@
-# Target: XIAO ESP32-C3 (RISC-V, 4 MB flash, ~400 KB SRAM, no PSRAM).
-# Build with: idf.py set-target esp32c3 && idf.py build
+# Target: AI-Thinker style ESP32-CAM (ESP32-S, 4 MB flash, 4 MB PSRAM, OV2640).
+# Build with: idf.py set-target esp32 && idf.py build
 # An existing generated "sdkconfig" overrides these defaults: delete it (and run idf.py fullclean)
 # after changing this file. See README.md "RAM budget" for the reason of every option.
-CONFIG_IDF_TARGET="esp32c3"
+CONFIG_IDF_TARGET="esp32"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_SINGLE_APP=y
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_FREERTOS_HZ=1000
 
 # --- System ---
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_ESP_SYSTEM_PANIC_REBOOT=y
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
 CONFIG_HEAP_POISONING_DISABLED=y
 CONFIG_HEAP_TRACING_OFF=y
 CONFIG_FREERTOS_USE_TRACE_FACILITY=n
@@ -80,8 +81,13 @@ CONFIG_MSC_ENABLE_MDNS=y
 CONFIG_MDNS_MAX_SERVICES=1
 CONFIG_MDNS_ENABLE_CONSOLE_CLI=n
 
-# SPI slave ISR in IRAM so that DMA transactions are re-armed quickly
-CONFIG_SPI_SLAVE_ISR_IN_IRAM=y
+# --- PSRAM (4 MB, quad SPI) for camera frame buffers and frame store slots ---
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_SPEED_40M=y
+# PSRAM only via heap_caps_malloc(MALLOC_CAP_SPIRAM): plain malloc / WiFi / lwIP stay in internal RAM
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
 
 # HTTP server
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024

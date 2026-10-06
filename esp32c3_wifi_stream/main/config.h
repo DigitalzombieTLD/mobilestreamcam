@@ -1,5 +1,5 @@
 /*
- * config.h - esp32c3_wifi_stream configuration
+ * config.h - esp32c3_wifi_stream configuration (AI-Thinker ESP32-CAM)
  *
  * Do NOT commit real credentials. Put your overrides into main/config_local.h
  * (git-ignored), e.g.:
@@ -34,35 +34,46 @@
 #define STATIC_DNS                "10.153.239.1"
 #endif
 
-/* ---- SPI link from the HX6538 (HX = master, ESP32-C3 = slave) ----
- * Grove Vision AI V2 XIAO header (verified against the Seeed schematic, see docs/mjpeg_stream.md):
- *   HX PB4  SCLK -> XIAO D8  = GPIO8
- *   HX PB2  MOSI -> XIAO D10 = GPIO10
- *   HX PB3  MISO <- XIAO D9  = GPIO9
- *   HX PB11 CS   -> XIAO D1  = GPIO3
+/* ---- Camera: AI-Thinker ESP32-CAM, OV2640 ----
+ * Default pin map of the common AI-Thinker board (also used by the ESP32-CAM-MB programming adapter setup).
+ * Other ESP32-CAM variants (M5Stack, TTGO, Wrover-Kit, ...) use a different map: override in main/config_local.h.
+ * Note: GPIO4 = flash LED, GPIO12-15 = SD card (unused), GPIO0 = XCLK (also the boot strapping pin).
  */
-#ifndef SPI_PIN_SCLK
-#define SPI_PIN_SCLK              8
-#define SPI_PIN_MOSI              10
-#define SPI_PIN_MISO              9
-#define SPI_PIN_CS                3
+#ifndef CAM_PIN_PWDN
+#define CAM_PIN_PWDN              32
+#define CAM_PIN_RESET             (-1)
+#define CAM_PIN_XCLK              0
+#define CAM_PIN_SIOD              26
+#define CAM_PIN_SIOC              27
+#define CAM_PIN_D7                35
+#define CAM_PIN_D6                34
+#define CAM_PIN_D5                39
+#define CAM_PIN_D4                36
+#define CAM_PIN_D3                21
+#define CAM_PIN_D2                19
+#define CAM_PIN_D1                18
+#define CAM_PIN_D0                5
+#define CAM_PIN_VSYNC             25
+#define CAM_PIN_HREF              23
+#define CAM_PIN_PCLK              22
 #endif
-#ifndef SPI_MODE_NUM
-#define SPI_MODE_NUM              0          /* UNVERIFIED: SPI mode used by the HX6538 master */
+#ifndef CAM_XCLK_FREQ_HZ
+#define CAM_XCLK_FREQ_HZ          20000000
+#endif
+#ifndef CAM_FRAME_SIZE
+#define CAM_FRAME_SIZE            FRAMESIZE_VGA   /* 640x480 */
+#endif
+#ifndef CAM_JPEG_QUALITY
+#define CAM_JPEG_QUALITY          12              /* 0-63, lower = better quality / bigger frames */
+#endif
+#ifndef CAM_FB_COUNT
+#define CAM_FB_COUNT              2               /* driver frame buffers (PSRAM) */
 #endif
 
-/* ---- Himax SPI protocol framing (UNVERIFIED without hardware) ----
- * header: [0xC0][0x5A][type][len, 4 bytes little endian] followed by the payload.
- */
-#define PTL_MAGIC0                0xC0
-#define PTL_MAGIC1                0x5A
-#define PTL_HEADER_LEN            7
-#define PTL_TYPE_JPG              0x01
-
-/* ---- Frame buffers (internal RAM, ~400 KB total on the C3) ---- */
-#define FRAME_MAX_BYTES           (24 * 1024)  /* hard limit: larger frames are dropped (counted as bad). 640x480 is ~5.7 KB typical.
-                                                  The HX6538 may send up to MJPEG_MAX_FRAME_BYTES (56 KB), the ESP32-C3 drops above this. */
-#define FRAME_SLOT_COUNT          3            /* 1 receiving + 1 latest + 1 being sent; use 2 if RAM is short */
+/* ---- Frame slots (PSRAM). The camera task copies each JPEG out of the driver's frame buffer into a slot and
+ * returns the buffer immediately, so a slow HTTP client never blocks the camera driver. ---- */
+#define FRAME_MAX_BYTES           (96 * 1024)  /* larger frames are dropped (counted as bad). VGA JPEG is typically 15-40 KB */
+#define FRAME_SLOT_COUNT          3            /* 1 being written + 1 latest + 1 being sent */
 
 /* ---- HTTP ---- */
 #define HTTP_PORT                 80

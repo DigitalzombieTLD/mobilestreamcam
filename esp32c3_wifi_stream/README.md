@@ -1,20 +1,49 @@
-# esp32c3_wifi_stream
+# esp32c3_wifi_stream (AI-Thinker ESP32-CAM)
 
-XIAO ESP32-C3 firmware (ESP-IDF v5.4): receives MJPEG frames (640x480, ~5.7 KB each, ~16 fps) from the HX6538 over SPI
-and serves them over HTTP (`/`, `/stream`, `/snapshot.jpg`, `/status`, `/favicon.ico` -> 204). Protocol and wiring:
-[`docs/mjpeg_stream.md`](../docs/mjpeg_stream.md).
+ESP-IDF firmware (v5.2+, CI uses v5.2.2) for the common **AI-Thinker style ESP32-CAM** (ESP32-S, 4 MB flash, 4 MB PSRAM,
+OV2640). It captures JPEG frames from the onboard OV2640 and serves them over Wi-Fi as before: `/`, `/stream`
+(MJPEG), `/snapshot.jpg`, `/status`, `/favicon.ico` (-> 204). The directory name is historical (the project used to
+run on a XIAO ESP32-C3 receiving frames from the HX6538 over SPI; that receive path has been removed from this build
+so its GPIOs and SPI DMA buffers cannot conflict with the camera).
+
+**Status: this migration has been written but not built or tested on hardware.** No ESP-IDF toolchain or board was
+available when it was made. Numbers in the RAM section below date from the old C3 design.
+
+## Build and flash
 
 ```bash
 cd esp32c3_wifi_stream
 rm -f sdkconfig sdkconfig.old && idf.py fullclean   # a generated sdkconfig overrides sdkconfig.defaults!
-idf.py set-target esp32c3 && idf.py build
-idf.py -p /dev/ttyACM0 flash && idf.py -p /dev/ttyACM0 monitor
+idf.py set-target esp32 && idf.py build             # downloads espressif/esp32-camera via the component manager
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-All configuration is in `sdkconfig.defaults` (`sdkconfig` is git-ignored). **After changing the defaults, delete
-`sdkconfig` and run `idf.py fullclean`**, otherwise the old values stay active.
+Wi-Fi credentials / static IP: copy overrides into `main/config_local.h` (git-ignored), see `main/config.h`.
 
-## RAM budget
+### ESP32-CAM-MB programming adapter
+* Plug the ESP32-CAM into the ESP32-CAM-MB board (USB-C/micro-USB, CH340 UART bridge; serial port is usually
+  `/dev/ttyUSB0` or `COMx`). The console is UART0 at 115200 baud.
+* The MB adapter drives GPIO0 and EN automatically, so normally no manual jumper is needed. If flashing fails with
+  "Failed to connect", hold the **IO0** button on the adapter, tap **RST**, then release IO0 (download mode), or retry.
+* After flashing press **RST** (or re-plug) to boot the app. GPIO0 is also the camera XCLK pin: it must not be held
+  low at reset, otherwise the chip stays in download mode (prints `waiting for download`).
+* The ROM bootloader prints some garbage at 74880 baud after reset; this is normal.
+* A weak USB port/cable can cause brownout resets when Wi-Fi starts; use a good 5 V supply.
+
+### Camera pin map
+`main/config.h` contains the standard AI-Thinker OV2640 map (PWDN=32, XCLK=0, SIOD=26, SIOC=27, D0-D7=5,18,19,21,36,39,
+34,35, VSYNC=25, HREF=23, PCLK=22). All `CAM_PIN_*` values, frame size (`CAM_FRAME_SIZE`, default VGA) and JPEG quality
+can be overridden in `main/config_local.h`. **Other ESP32-CAM variants (M5Stack, TTGO, Wrover-Kit, ...) need a different
+pin map.** GPIO4 (flash LED) and the SD card pins are not used.
+
+### Design
+* `camera.c` initialises the OV2640 (JPEG, `CAMERA_GRAB_LATEST`, 2 frame buffers in PSRAM), copies each frame into a
+  frame-store slot and returns the driver buffer immediately, so a slow HTTP client never holds a camera buffer.
+* `frame_store.c` keeps 3 slots of `FRAME_MAX_BYTES` (96 KB) in PSRAM (`CONFIG_SPIRAM=y`, quad mode, caps-alloc only:
+  Wi-Fi/lwIP stay in internal RAM). Larger frames are dropped and counted as bad.
+* `http_stream.c`, `wifi_sta.c` and the config mechanism are unchanged.
+
+## RAM budget (historical, from the ESP32-C3 design; the Wi-Fi/lwIP trimming is kept)
 
 Problem on hardware (old config): `/status` after 30 s showed `heap_free 8412`, `heap_min_free 4284`; the page loaded
 once, then new connections failed and the chip rebooted.

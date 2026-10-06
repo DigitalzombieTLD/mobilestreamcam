@@ -11,7 +11,7 @@
 
 static const char *TAG = "frame_store";
 
-#define SLOT_CAPACITY  (((FRAME_MAX_BYTES + PTL_HEADER_LEN + 64) + 3) & ~3)
+#define SLOT_CAPACITY  ((FRAME_MAX_BYTES + 3) & ~3)
 
 static frame_slot_t s_slots[FRAME_SLOT_COUNT];
 static frame_slot_t *s_writer;
@@ -46,7 +46,7 @@ void frame_store_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     for (int i = 0; i < FRAME_SLOT_COUNT; i++) {
-        s_slots[i].data = heap_caps_malloc(SLOT_CAPACITY, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        s_slots[i].data = heap_caps_malloc(SLOT_CAPACITY, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!s_slots[i].data) {
             ESP_LOGE(TAG, "slot %d alloc failed (%d B) - lower FRAME_SLOT_COUNT/FRAME_MAX_BYTES", i, SLOT_CAPACITY);
             abort();

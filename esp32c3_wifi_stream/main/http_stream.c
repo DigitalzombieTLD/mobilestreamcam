@@ -114,7 +114,7 @@ static void stream_task(void *arg)
     while (!atomic_load(&s_stop_stream)) {
         frame_slot_t *f = frame_store_acquire_latest(last_seq, 500);
         if (!f) {
-            /* no new frame yet (first frame / HX restarting): a keepalive detects clients that went away */
+            /* no new frame yet (first frame / camera restarting): a keepalive detects clients that went away */
             idle_ms += 500;
             if (idle_ms >= 5000) {
                 idle_ms = 0;
