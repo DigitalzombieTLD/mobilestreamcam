@@ -4,6 +4,7 @@
  */
 #include <stdio.h>
 #include "sdkconfig.h"
+#include <stdatomic.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -20,10 +21,110 @@
 static const char *TAG = "wifi_sta";
 
 static wifi_got_ip_cb_t s_on_got_ip;
-static volatile bool s_connected;
+static atomic_bool s_connected;
+static atomic_bool s_associated;
+static atomic_uint s_associations;
+static atomic_uint s_disconnects;
+static atomic_int s_last_disconnect_reason = ATOMIC_VAR_INIT(-1);
 static esp_netif_t *s_netif;
 static uint32_t s_retry;
 static esp_timer_handle_t s_retry_timer;
+
+static const char *secondary_channel_name(wifi_second_chan_t channel)
+{
+    switch (channel) {
+    case WIFI_SECOND_CHAN_NONE: return "none";
+    case WIFI_SECOND_CHAN_ABOVE: return "above";
+    case WIFI_SECOND_CHAN_BELOW: return "below";
+    default: return "unknown";
+    }
+}
+
+static const char *phy_mode_name(wifi_phy_mode_t mode)
+{
+    switch (mode) {
+    case WIFI_PHY_MODE_11B: return "11b";
+    case WIFI_PHY_MODE_11G: return "11g";
+    case WIFI_PHY_MODE_HT20: return "11n/HT20";
+    case WIFI_PHY_MODE_HT40: return "11n/HT40";
+    case WIFI_PHY_MODE_HE20: return "11ax/HE20";
+    case WIFI_PHY_MODE_LR: return "LR";
+    default: return "unknown";
+    }
+}
+
+static const char *power_save_name(wifi_ps_type_t mode)
+{
+    switch (mode) {
+    case WIFI_PS_NONE: return "none";
+    case WIFI_PS_MIN_MODEM: return "min_modem";
+    case WIFI_PS_MAX_MODEM: return "max_modem";
+    default: return "unknown";
+    }
+}
+
+void wifi_sta_get_diagnostics(wifi_sta_diagnostics_t *diagnostics)
+{
+    memset(diagnostics, 0, sizeof(*diagnostics));
+    diagnostics->connected = atomic_load(&s_connected);
+    diagnostics->associated = atomic_load(&s_associated);
+    diagnostics->associations = atomic_load(&s_associations);
+    diagnostics->disconnects = atomic_load(&s_disconnects);
+    diagnostics->last_disconnect_reason = atomic_load(&s_last_disconnect_reason);
+    diagnostics->bandwidth_mhz = -1;
+    diagnostics->secondary_channel = -1;
+    strlcpy(diagnostics->phy, "unknown", sizeof(diagnostics->phy));
+    strlcpy(diagnostics->secondary_offset, "unknown", sizeof(diagnostics->secondary_offset));
+    strlcpy(diagnostics->power_save, "unknown", sizeof(diagnostics->power_save));
+
+    wifi_bandwidth_t bandwidth;
+    if (esp_wifi_get_bandwidth(WIFI_IF_STA, &bandwidth) == ESP_OK) {
+        if (bandwidth == WIFI_BW_HT20) {
+            diagnostics->bandwidth_mhz = 20;
+        } else if (bandwidth == WIFI_BW_HT40) {
+            diagnostics->bandwidth_mhz = 40;
+        }
+    }
+    wifi_ps_type_t power_save;
+    if (esp_wifi_get_ps(&power_save) == ESP_OK) {
+        strlcpy(diagnostics->power_save, power_save_name(power_save), sizeof(diagnostics->power_save));
+    }
+
+    if (!diagnostics->associated) {
+        return;
+    }
+
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
+        return;
+    }
+    diagnostics->ap_info_valid = true;
+    memcpy(diagnostics->ssid, ap.ssid, sizeof(ap.ssid));
+    diagnostics->ssid[sizeof(ap.ssid)] = '\0';
+    snprintf(diagnostics->bssid, sizeof(diagnostics->bssid),
+             "%02x:%02x:%02x:%02x:%02x:%02x",
+             (unsigned)ap.bssid[0], (unsigned)ap.bssid[1], (unsigned)ap.bssid[2],
+             (unsigned)ap.bssid[3], (unsigned)ap.bssid[4], (unsigned)ap.bssid[5]);
+    diagnostics->rssi = ap.rssi;
+    diagnostics->primary_channel = ap.primary;
+    strlcpy(diagnostics->secondary_offset, secondary_channel_name(ap.second),
+            sizeof(diagnostics->secondary_offset));
+    if (ap.second == WIFI_SECOND_CHAN_NONE) {
+        diagnostics->secondary_channel = 0;
+    } else if (ap.second == WIFI_SECOND_CHAN_ABOVE) {
+        diagnostics->secondary_channel = ap.primary + 4;
+    } else if (ap.second == WIFI_SECOND_CHAN_BELOW) {
+        diagnostics->secondary_channel = ap.primary - 4;
+    }
+    diagnostics->ap_11b = ap.phy_11b;
+    diagnostics->ap_11g = ap.phy_11g;
+    diagnostics->ap_11n = ap.phy_11n;
+
+    wifi_phy_mode_t phy;
+    if (esp_wifi_sta_get_negotiated_phymode(&phy) == ESP_OK) {
+        strlcpy(diagnostics->phy, phy_mode_name(phy), sizeof(diagnostics->phy));
+    }
+}
 
 static void do_connect(void)
 {
@@ -66,6 +167,23 @@ static void start_mdns(void)
 #endif
 }
 
+static void log_link_diagnostics(void *arg)
+{
+    wifi_sta_diagnostics_t diagnostics;
+    wifi_sta_get_diagnostics(&diagnostics);
+    if (diagnostics.ap_info_valid) {
+        ESP_LOGI(TAG, "connected AP ssid=\"%s\" bssid=%s channel=%d/%d (%s) rssi=%d dBm "
+                 "phy=%s ap_phy[11b=%d,11g=%d,11n=%d] bandwidth=%d MHz power_save=%s",
+                 diagnostics.ssid, diagnostics.bssid, diagnostics.primary_channel,
+                 diagnostics.secondary_channel, diagnostics.secondary_offset, diagnostics.rssi, diagnostics.phy,
+                 diagnostics.ap_11b, diagnostics.ap_11g, diagnostics.ap_11n,
+                 diagnostics.bandwidth_mhz, diagnostics.power_save);
+    } else {
+        ESP_LOGW(TAG, "connected AP diagnostics unavailable");
+    }
+    vTaskDelete(NULL);
+}
+
 static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT) {
@@ -77,12 +195,18 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
             break;
         case WIFI_EVENT_STA_CONNECTED:
             esp_timer_stop(s_retry_timer);
+            atomic_store(&s_associated, true);
+            atomic_fetch_add(&s_associations, 1);
             break;
         case WIFI_EVENT_STA_DISCONNECTED: {
             wifi_event_sta_disconnected_t *d = data;
-            s_connected = false;
+            atomic_store(&s_connected, false);
+            atomic_store(&s_associated, false);
             s_retry++;
-            ESP_LOGW(TAG, "disconnected (reason %d), retry #%u", d->reason, (unsigned)s_retry);
+            atomic_store(&s_last_disconnect_reason, d->reason);
+            uint32_t disconnects = atomic_fetch_add(&s_disconnects, 1) + 1;
+            ESP_LOGW(TAG, "disconnected (reason %d), disconnect #%u, retry #%u",
+                     d->reason, (unsigned)disconnects, (unsigned)s_retry);
             /* retry forever; back off a little while the AP is not found (full scan each time) */
             esp_timer_stop(s_retry_timer);
             esp_timer_start_once(s_retry_timer, (s_retry < 5 ? 200 : 2000) * 1000ULL);
@@ -94,9 +218,12 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = data;
         ESP_LOGI(TAG, "got IP " IPSTR, IP2STR(&e->ip_info.ip));
-        s_connected = true;
+        atomic_store(&s_connected, true);
         s_retry = 0;
         esp_timer_stop(s_retry_timer);
+        if (xTaskCreate(log_link_diagnostics, "wifi_diag", 3072, NULL, 3, NULL) != pdPASS) {
+            ESP_LOGW(TAG, "could not start AP diagnostics task");
+        }
         start_mdns();
         if (s_on_got_ip) {
             s_on_got_ip();
@@ -151,13 +278,13 @@ void wifi_sta_start(wifi_got_ip_cb_t on_got_ip)
 
 bool wifi_sta_connected(void)
 {
-    return s_connected;
+    return atomic_load(&s_connected);
 }
 
 int wifi_sta_rssi(void)
 {
     wifi_ap_record_t ap;
-    if (s_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+    if (wifi_sta_connected() && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
         return ap.rssi;
     }
     return 0;
@@ -166,7 +293,7 @@ int wifi_sta_rssi(void)
 void wifi_sta_ip_str(char *buf, int len)
 {
     esp_netif_ip_info_t ip;
-    if (s_netif && esp_netif_get_ip_info(s_netif, &ip) == ESP_OK) {
+    if (wifi_sta_connected() && s_netif && esp_netif_get_ip_info(s_netif, &ip) == ESP_OK) {
         snprintf(buf, len, IPSTR, IP2STR(&ip.ip));
     } else {
         snprintf(buf, len, "0.0.0.0");

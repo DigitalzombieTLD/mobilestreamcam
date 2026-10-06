@@ -28,6 +28,9 @@ static const char *TAG = "http";
 static httpd_handle_t s_server;
 static atomic_int s_clients;
 static atomic_bool s_stop_stream;   /* ask the running stream task to leave */
+static portMUX_TYPE s_tx_stats_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint64_t s_tx_frames;
+static uint64_t s_tx_jpeg_bytes;
 
 #define STREAM_TASK_STACK 3584
 
@@ -71,20 +74,39 @@ static esp_err_t snapshot_handler(httpd_req_t *req)
 static esp_err_t status_handler(httpd_req_t *req)
 {
     frame_stats_t st;
+    wifi_sta_diagnostics_t wifi;
+    uint64_t tx_frames;
+    uint64_t tx_jpeg_bytes;
     char ip[16];
-    char buf[640];
+    char buf[1024];
     frame_store_get_stats(&st);
     wifi_sta_ip_str(ip, sizeof(ip));
+    wifi_sta_get_diagnostics(&wifi);
+    portENTER_CRITICAL(&s_tx_stats_mux);
+    tx_frames = s_tx_frames;
+    tx_jpeg_bytes = s_tx_jpeg_bytes;
+    portEXIT_CRITICAL(&s_tx_stats_mux);
     int n = snprintf(buf, sizeof(buf),
         "{\"fps\":%.1f,\"width\":%u,\"height\":%u,\"last_frame_bytes\":%u,"
         "\"max_frame_bytes\":%u,\"frame_max_bytes\":%u,\"frame_size\":%d,\"jpeg_quality\":%d,"
         "\"frames\":%u,\"bad_frames\":%u,\"dropped_frames\":%u,\"clients\":%d,"
-        "\"wifi\":{\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\"},"
+        "\"tx_frames\":%llu,\"tx_jpeg_bytes\":%llu,"
+        "\"wifi\":{\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\",\"connected\":%s,\"associated\":%s,"
+        "\"ap_info_valid\":%s,\"bssid\":\"%s\",\"channel\":%d,\"secondary_channel\":%d,\"secondary_offset\":\"%s\","
+        "\"phy\":\"%s\",\"ap_phy_11b\":%s,\"ap_phy_11g\":%s,\"ap_phy_11n\":%s,"
+        "\"bandwidth_mhz\":%d,\"power_save\":\"%s\",\"associations\":%u,\"disconnects\":%u,"
+        "\"last_disconnect_reason\":%d},"
         "\"heap_free\":%u,\"heap_min_free\":%u,\"heap_largest_block\":%u,\"uptime_s\":%u}",
         st.fps, st.width, st.height, (unsigned)st.last_size,
         (unsigned)st.max_size, (unsigned)FRAME_MAX_BYTES, (int)CAM_FRAME_SIZE, (int)CAM_JPEG_QUALITY,
         (unsigned)st.frames, (unsigned)st.bad, (unsigned)st.dropped, (int)atomic_load(&s_clients),
-        WIFI_SSID, wifi_sta_rssi(), ip,
+        (unsigned long long)tx_frames, (unsigned long long)tx_jpeg_bytes,
+        WIFI_SSID, wifi.rssi, ip, wifi.connected ? "true" : "false", wifi.associated ? "true" : "false",
+        wifi.ap_info_valid ? "true" : "false", wifi.bssid, wifi.primary_channel,
+        wifi.secondary_channel, wifi.secondary_offset,
+        wifi.phy, wifi.ap_11b ? "true" : "false", wifi.ap_11g ? "true" : "false",
+        wifi.ap_11n ? "true" : "false", wifi.bandwidth_mhz, wifi.power_save,
+        (unsigned)wifi.associations, (unsigned)wifi.disconnects, wifi.last_disconnect_reason,
         (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(),
         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT),
         (unsigned)(esp_timer_get_time() / 1000000));
@@ -138,6 +160,12 @@ static void stream_task(void *arg)
         }
         if (r == ESP_OK) {
             r = httpd_resp_send_chunk(req, "\r\n", 2);
+        }
+        if (r == ESP_OK) {
+            portENTER_CRITICAL(&s_tx_stats_mux);
+            s_tx_frames++;
+            s_tx_jpeg_bytes += f->size;
+            portEXIT_CRITICAL(&s_tx_stats_mux);
         }
         frame_store_release(f);
         if (r != ESP_OK) {

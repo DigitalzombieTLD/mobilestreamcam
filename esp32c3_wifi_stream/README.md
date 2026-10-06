@@ -65,6 +65,43 @@ Measure on hardware: `GET /status` (`heap_free`, `heap_min_free`, `heap_largest_
 `stack hwm` values are the minimum free stack in bytes (`uxTaskGetStackHighWaterMark`); lower the stack sizes
 (`cfg.stack_size`, `STREAM_TASK_STACK`, `SPI_RX_STACK_BYTES`) only if they stay well above ~512.
 
+### Wi-Fi diagnostics and hotspot comparison
+
+`/status` retains its existing fields and adds:
+
+* `wifi.ssid` remains the configured SSID for compatibility; the association log reports the actual AP SSID.
+  `wifi.connected` means got an IP, while `wifi.associated` means associated with an AP. If disconnected, `ip` is
+  `0.0.0.0`; link-specific fields may be empty/zero and `wifi.ap_info_valid` is false.
+* `wifi.bssid`, `wifi.channel` (primary), `wifi.secondary_channel` (0 means HT20/no secondary; -1 unavailable),
+  `wifi.secondary_offset` (`above`, `below`, or `none`), and `wifi.rssi` describe the connected AP.
+  `wifi.phy` is the negotiated PHY mode when ESP-IDF reports it (for example, `11b`, `11g`, or `11n/HT20`);
+  `wifi.ap_phy_11b`, `wifi.ap_phy_11g`, and `wifi.ap_phy_11n` are AP capabilities, not proof of the negotiated mode.
+* `wifi.bandwidth_mhz` and `wifi.power_save` are the current station settings queried from ESP-IDF. This firmware
+  currently configures HT20 and disables power save; diagnostics do not change either setting.
+* `wifi.associations`, `wifi.disconnects`, and `wifi.last_disconnect_reason` count association/disconnect events since
+  boot. A reason of `-1` means there has not been a disconnect event.
+* `tx_frames` and `tx_jpeg_bytes` count complete MJPEG frames for which all HTTP chunk-send calls returned success,
+  and the JPEG payload bytes in those frames, since boot. They exclude HTTP/TCP/IP overhead and do not prove the peer
+  acknowledged the data. Compare counter deltas over a fixed interval to estimate application payload throughput.
+  This distinguishes captured `fps` from frames accepted by the HTTP send path; neither is the viewer's displayed FPS.
+
+On association, the `wifi_sta` serial log reports the AP SSID/BSSID, channel pair, RSSI, negotiated PHY (when available),
+AP PHY capabilities, configured bandwidth, and power-save mode. The negotiated PHY API is available in the CI ESP-IDF
+v5.2.2. Wi-Fi per-packet retry/failed-transmit counters and negotiated data rate are not enabled or sampled here; use
+the AP/phone's own telemetry or an external capture for those metrics. These firmware diagnostics have not been verified
+on hardware.
+
+For a repeatable home-AP versus phone-hotspot A/B test:
+
+1. Use the same ESP32-CAM, camera settings, viewer device, and VLC (or other stream client) in both runs. Put both the
+   ESP32 and viewer device on the home Wi-Fi for one run, then connect both to the phone hotspot for the other.
+2. Open the same `/stream` URL in the client. Capture `/status` immediately before and after a fixed 60-second run;
+   `/status` can be queried while the stream is open. Record `fps`, `tx_frames`, `tx_jpeg_bytes`, and the `wifi` fields.
+   The `tx_jpeg_bytes` difference times 8 divided by 60 estimates delivered JPEG payload bit/s.
+3. Capture serial lines containing `connected AP`, and any `disconnected (reason ...)` lines. Compare
+   AP channel/BSSID, RSSI, PHY, association counts, captured FPS, and successful HTTP frame/byte deltas between runs.
+   Do not poll `/status` continuously; the before/after snapshots avoid unnecessary diagnostic traffic.
+
 ### How leaks are avoided
 * No per-frame or per-request `malloc`/`free`: frame slots are allocated once (zero-copy ref counted hand-off from the
   SPI task to the HTTP task), `/status` and the stream headers use stack buffers, the SPI task uses a static stack.
