@@ -96,7 +96,7 @@ once, then new connections failed and the chip rebooted.
 | Frame slots (3x) | 3 x 56 KB = ~170 KB | 3 x 24 KB = ~74 KB (`FRAME_MAX_BYTES`, larger frames are dropped) | computed |
 | lwIP TCP send buf / window | 23360 / 11680 per socket | 11520 / 5760 | computed |
 | WiFi dynamic RX/TX buffers | 24 / 24 | 16 / 16 | computed |
-| HTTP sockets | 5 (+3 internal) | 1 (+3 internal), `LWIP_MAX_SOCKETS=5` | computed |
+| HTTP sockets | 5 (+3 internal) | 2 (+3 internal), `LWIP_MAX_SOCKETS=6` | computed |
 | Stream clients / tasks | up to 3 tasks x 4 KB | 1 task x 3.5 KB | computed |
 | IRAM optimizations (WiFi, lwIP) | on | off (IRAM and DRAM share the C3 SRAM) | computed |
 | NVS | initialised | not used | computed |
@@ -121,11 +121,11 @@ Measure on hardware: `GET /status` (`heap_free`, `heap_min_free`, `heap_largest_
   after 10 s -> `esp_restart()`. `CONFIG_ESP_SYSTEM_PANIC_REBOOT=y` also reboots after a panic.
 
 ### HTTP server
-`max_open_sockets = 1` with `lru_purge_enable`: the page (`/`) and the stream (`/stream`, own task, async handler) do not
-deadlock because the page connection is closed/purged when the browser opens the stream connection, and the page
-itself needs no further requests. `/status` while streaming replaces the stream connection (one viewer only); use a
-second request only when no stream is open. If this proves unworkable with a given browser raise `max_open_sockets`
-to 2 and `CONFIG_LWIP_MAX_SOCKETS` to 6 (httpd uses 3 sockets internally). Send/receive timeouts are 10 s.
+`max_open_sockets = 2` with `lru_purge_enable` allows one MJPEG stream and another HTTP request (such as `/status` or a
+page asset) to coexist; `MAX_STREAM_CLIENTS` remains 1. httpd uses 3 sockets internally, so `CONFIG_LWIP_MAX_SOCKETS=6`
+provides 3 internal sockets, 2 client sockets and one spare. If an existing generated `sdkconfig` is present, remove it
+and rebuild for the default to take effect: `rm -f sdkconfig sdkconfig.old && idf.py fullclean && idf.py build`.
+Send/receive timeouts are 10 s.
 
 ### sdkconfig changes
 
@@ -155,7 +155,7 @@ to 2 and `CONFIG_LWIP_MAX_SOCKETS` to 6 (httpd uses 3 sockets internally). Send/
 | `LWIP_TCP_ACCEPTMBOX_SIZE` | 2 | one client | - |
 | `LWIP_TCPIP_TASK_STACK_SIZE` | 2560 | smaller tcpip task | verify with hwm if more handlers are added |
 | `LWIP_TCP_SACK_OUT` | n | saves memory | slower loss recovery |
-| `LWIP_MAX_SOCKETS` | 5 | 3 httpd internal + 1 + 1 spare | - |
+| `LWIP_MAX_SOCKETS` | 6 | 3 httpd internal + 2 client + 1 spare | - |
 | `LWIP_MAX_ACTIVE_TCP` / `LISTENING_TCP` / `UDP_PCBS` | 8 / 2 / 6 | fewer PCBs | - |
 | `MSC_ENABLE_MDNS` (own option) | y | `<host>.local`; set `n` to save ~8-10 KB | no `.local` name |
 | `MDNS_MAX_SERVICES` | 1 | only `_http._tcp` | - |
