@@ -20,18 +20,18 @@
 #define WIFI_PASSWORD             "SchachtCam123!"   /* "" for an open network */
 #endif
 #ifndef DEVICE_HOSTNAME
-#define DEVICE_HOSTNAME           "schachtcam"       /* also advertised as <hostname>.local (mDNS) */
+#define DEVICE_HOSTNAME           "SchachtCam"       /* also advertised as <hostname>.local (mDNS) */
 #endif
 
 /* Optional static IP (0 = DHCP) */
 #ifndef USE_STATIC_IP
-#define USE_STATIC_IP             0
+#define USE_STATIC_IP             1
 #endif
 #ifndef STATIC_IP
-#define STATIC_IP                 "10.195.5.222"
-#define STATIC_GATEWAY            "10.195.5.1"
+#define STATIC_IP                 "10.153.239.222"
+#define STATIC_GATEWAY            "10.153.239.1"
 #define STATIC_NETMASK            "255.255.255.0"
-#define STATIC_DNS                "10.195.5.1"
+#define STATIC_DNS                "10.153.239.1"
 #endif
 
 /* ---- Camera: AI-Thinker ESP32-CAM, OV2640 ----
@@ -60,20 +60,61 @@
 #ifndef CAM_XCLK_FREQ_HZ
 #define CAM_XCLK_FREQ_HZ          20000000
 #endif
+/* Quality / speed presets (select with "#define CAM_PRESET n" in main/config_local.h). Frame rates are ESTIMATES for
+ * the OV2640 at 20 MHz XCLK over Wi-Fi and have NOT been measured on hardware: check /status "fps" and tune.
+ *   1 = SVGA 800x600,   quality 10  (default; expected to reach the 10-15+ fps goal)
+ *   2 = VGA  640x480,   quality 12  (previous default; fastest)
+ *   3 = XGA  1024x768,  quality 12  (sharper; fps depends heavily on Wi-Fi, may drop below 10)
+ *   4 = SXGA 1280x1024, quality 14  (slow, probably < 8 fps)
+ *   5 = UXGA 1600x1200, quality 16  (slowest, a few fps)
+ * CAM_FRAME_SIZE / CAM_JPEG_QUALITY / FRAME_MAX_BYTES can still be overridden individually. */
+#ifndef CAM_PRESET
+#define CAM_PRESET                1
+#endif
+#if CAM_PRESET == 2
+#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_VGA
+#define CAM_PRESET_QUALITY        12
+#define CAM_PRESET_MAX_BYTES      (96 * 1024)
+#elif CAM_PRESET == 3
+#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_XGA
+#define CAM_PRESET_QUALITY        12
+#define CAM_PRESET_MAX_BYTES      (160 * 1024)
+#elif CAM_PRESET == 4
+#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_SXGA
+#define CAM_PRESET_QUALITY        14
+#define CAM_PRESET_MAX_BYTES      (224 * 1024)
+#elif CAM_PRESET == 5
+#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_UXGA
+#define CAM_PRESET_QUALITY        16
+#define CAM_PRESET_MAX_BYTES      (320 * 1024)
+#else
+#define CAM_PRESET_FRAME_SIZE     FRAMESIZE_SVGA
+#define CAM_PRESET_QUALITY        10
+#define CAM_PRESET_MAX_BYTES      (128 * 1024)
+#endif
+
 #ifndef CAM_FRAME_SIZE
-#define CAM_FRAME_SIZE            FRAMESIZE_VGA   /* 640x480 */
+#define CAM_FRAME_SIZE            CAM_PRESET_FRAME_SIZE
 #endif
 #ifndef CAM_JPEG_QUALITY
-#define CAM_JPEG_QUALITY          12              /* 0-63, lower = better quality / bigger frames */
+#define CAM_JPEG_QUALITY          CAM_PRESET_QUALITY   /* 0-63, lower = better quality / bigger frames */
 #endif
 #ifndef CAM_FB_COUNT
-#define CAM_FB_COUNT              2               /* driver frame buffers (PSRAM) */
+#define CAM_FB_COUNT              2               /* driver frame buffers (PSRAM); 2 = capture overlaps the copy */
 #endif
 
 /* ---- Frame slots (PSRAM). The camera task copies each JPEG out of the driver's frame buffer into a slot and
  * returns the buffer immediately, so a slow HTTP client never blocks the camera driver. ---- */
-#define FRAME_MAX_BYTES           (96 * 1024)  /* larger frames are dropped (counted as bad). VGA JPEG is typically 15-40 KB */
+#ifndef FRAME_MAX_BYTES
+#define FRAME_MAX_BYTES           CAM_PRESET_MAX_BYTES  /* larger frames are dropped (counted as bad), never written past the slot */
+#endif
+#ifndef FRAME_SLOT_COUNT
 #define FRAME_SLOT_COUNT          3            /* 1 being written + 1 latest + 1 being sent */
+#endif
+/* PSRAM budget: the 4 MB usable PSRAM must hold the slots plus the driver frame buffers (CAM_FB_COUNT x ~FRAME_MAX_BYTES).
+ * Keep slots + driver buffers well under 3 MB so nothing starves. */
+_Static_assert((FRAME_SLOT_COUNT + CAM_FB_COUNT) * FRAME_MAX_BYTES <= 3 * 1024 * 1024,
+               "frame store + camera buffers exceed the PSRAM budget: lower FRAME_MAX_BYTES / FRAME_SLOT_COUNT / CAM_FB_COUNT");
 
 /* ---- HTTP ---- */
 #define HTTP_PORT                 80

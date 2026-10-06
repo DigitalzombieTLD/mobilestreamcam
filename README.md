@@ -1,419 +1,164 @@
-# Himax examples for Seeed Grove Vision AI Module V2
-This is a repository which step by step teaches you how to build your own examples and run on Seeed Grove Vision AI Module V2.
-Finally, teach you how to restore to the original factory settings and run [SenseCraft AI](https://wiki.seeedstudio.com/grove_vision_ai_v2_software_support/#-no-code-getting-started-with-sensecraft-ai-) from [Seeed Studio](https://wiki.seeedstudio.com/grove_vision_ai_v2/).
-## Outline
-- How to build the firmware?
-    - [Build the firmware at Linux environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#build-the-firmware-at-linux-environment)
-    - [Build the firmware at MacOS environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#build-the-firmware-at-macos-environment)
-    - [Build the firmware at Windows environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#build-the-firmware-at-windows-environment)
-- How to flash the firmware?
-    - [System Requirement](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#system-requirement)
-    - [Flash Image Update at Linux Environment by python code](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#flash-image-update-at-linux-environment-by-python-code)
-    - [Flash Image Update at Windows Environment by python code](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#flash-image-update-at-windows-environment-by-python-code)
-    - [Flash Image Update at Linux Environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#flash-image-update-at-linux-environment)
-    - [Flash Image Update at Windows Environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#flash-image-update-at-windows-environment)
-    - [Flash using Edge Impulse CLI tools](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#flash-using-edge-impulse-cli-tools)
-- How to restore to the original factory settings?
-    - [Linux Environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#linux-environment)
-    - [Windows Environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#windows-environment)
+# esp32c3_wifi_stream (AI-Thinker ESP32-CAM)
 
-| scenario_app  | project name |
-| ----- | -------- |
-| face mesh | [tflm_fd_fm](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_fd_fm/README.md) |
-| yolov8n object detection | [tflm_yolov8_od](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_od/README.md) |
-| yolov8n pose | [tflm_yolov8_pose](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_pose/README.md) |
-| yolov8n gender classification | [tflm_yolov8_gender_cls](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_gender_cls/README.md) |
-| pdm mic record | [pdm_record](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/pdm_record/README.md)      |
-| KeyWord Spotting using Transformers | [kws_pdm_record](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/kws_pdm_record/README.md) |
-| imu read | [imu_read](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/imu_read/README.md) |
-| peoplenet from TAO | [tflm_peoplenet](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_peoplenet/README.md) |
-| yolo11n object detection | [tflm_yolo11_od](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolo11_od/README.md) |
-| WiFi MJPEG streaming camera (with XIAO ESP32-C3 firmware) | [mjpeg_stream_spi](docs/mjpeg_stream.md) |
+ESP-IDF firmware (v5.2+, CI uses v5.2.2) for the common **AI-Thinker style ESP32-CAM** (ESP32-S, 4 MB flash, 4 MB PSRAM,
+OV2640). It captures JPEG frames from the onboard OV2640 and serves them over Wi-Fi as before: `/`, `/stream`
+(MJPEG), `/snapshot.jpg`, `/status`, `/favicon.ico` (-> 204). The directory name is historical (the project used to
+run on a XIAO ESP32-C3 receiving frames from the HX6538 over SPI; that receive path has been removed from this build
+so its GPIOs and SPI DMA buffers cannot conflict with the camera).
 
+**Status: this migration and the quality/resolution upgrade have been written but not built or tested on hardware.**
+No ESP-IDF toolchain or board was available. Numbers in the RAM section below date from the old C3 design.
 
-- [How to add support for raspberry pi camera?](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#how-to-add-support-for-raspberry-pi-camera)
-- [How to use CMSIS-NN at the project?](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#how-to-use-cmsis-nn-at-the-project)
+## Build and flash
 
-- [How to use CMSIS-DSP at the project?](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/hello_world_cmsis_dsp/README.md)
-
-- [How to use CMSIS-CV at the project?](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/hello_world_cmsis_cv/README.md)
-    - please clone the project by following command to download CMSIS-CV library
-        ```
-        git clone --recursive https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2.git
-        ```
-- How to run Edge Impulse Example: standalone inferencing using Grove Vision AI Module V2 (Himax WiseEye2)? 
-    - [ei_standalone_inferencing](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/EPII_CM55M_APP_S/app/scenario_app/ei_standalone_inferencing)
-
-    - [ei_standalone_inferencing_camera](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/EPII_CM55M_APP_S/app/scenario_app/ei_standalone_inferencing_camera)
-
-- [FAQ](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/FAQ.md)
-
-## How to build the firmware?
-This part explains how you can build the firmware for Grove Vision AI Module V2.
-### Build the firmware at Linux environment
-Note: The following has been tested to work on Ubuntu 20.04 PC
-- Step 1: Install the following prerequisites
-    ```
-    sudo apt install make
-    ```
-- Step 2: Download Arm GNU Toolchain (arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz)
-    ```
-    cd ~
-    wget https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
-    ```
-- Step 3: Extract the file
-    ```
-    tar -xvf arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
-    ```
-- Step 4: Add arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin/: to PATH  
-    (hint: the path about [$HOME/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin/] should set your own path, you can not just copy and paste)
-    ```
-    #this is just the example, you can not just copy and paste !!
-    export PATH="$HOME/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin/:$PATH"
-    ```
-- Step 5: Clone the following repository and go into Seeed_Grove_Vision_AI_Module_V2 folder
-    ```
-    git clone --recursive https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2.git
-    cd Seeed_Grove_Vision_AI_Module_V2
-    ```
-- Step 6: Compile the firmware
-    ```
-    cd EPII_CM55M_APP_S
-    make clean
-    make
-    ```
-- Output elf file: `./obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf`
-    ![alt text](images/output_elf_file.png)
-- Step 7: Generate firmware image file
-    ```
-    cd ../we2_image_gen_local/
-    cp ../EPII_CM55M_APP_S/obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf input_case1_secboot/
-    ./we2_local_image_gen project_case1_blp_wlcsp.json
-    ```
-- Output firmware image: `./output_case1_sec_wlcsp/output.img`
-    ![alt text](images/output_image.png)
-
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
-### Build the firmware at MacOS environment
-Note: The steps are almost the same as the [Linux environment](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#build-the-firmware-at-linux-environment) except `Step 1` and `Step 7`.
-- Step 1: 
-    - You should make sure your `make` is using `GNU version make` not `BSD version make`.
-        ```
-        make --version
-        ```
-        ![alt text](images/mac_gnu_make.png)
-    - If it is not `GNU make` , you should download it by following command.
-        ```
-        brew install make
-        ```
-    - After installation, you can access it with the command gmake to avoid conflicts with the default make.
-        ```
-        gmake
-        ```
-    - So, you should create an alias in your shell configuration file (like .bash_profile or .zshrc):
-        ```
-        alias make='gmake'
-        ```
-- Step 7: Generate firmware image file (using `./we2_local_image_gen_macOS_arm64` for MacOS)
-    ```
-    cd ../we2_image_gen_local/
-    cp ../EPII_CM55M_APP_S/obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf input_case1_secboot/
-    ./we2_local_image_gen_macOS_arm64 project_case1_blp_wlcsp.json
-    ```
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
-
-### Build the firmware at Windows environment
-- Step 1: Install the `make` command for prerequisites , you can reference [here](https://github.com/xpack-dev-tools/windows-build-tools-xpack/releases)
-- Step 2: Download Arm GNU Toolchain [arm-gnu-toolchain-13.2.rel1-mingw-w64-i686-arm-none-eabi.zip](https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-mingw-w64-i686-arm-none-eabi.zip?rev=93fda279901c4c0299e03e5c4899b51f&hash=A3C5FF788BE90810E121091C873E3532336C8D46)
-- Step 3: Extract the file
-    ```
-    tar -xvf arm-gnu-toolchain-13.2.rel1-mingw-w64-i686-arm-none-eabi.zip
-    ```
-- Step 4: Add arm-gnu-toolchain-13.2.rel1-mingw-w64-i686-arm-none-eabi/bin/ to your environment variables 
-   - option1: add the gnu-toolchain to your environment variables manually
-   - option2: add the gnu-toolchain by command
-     (hint: the path about [location of your gnu-toolchain-13.2 ROOT] should set your own path, you can not just copy and paste)
-        ```
-        #this is just the example, you can not just copy and paste !!
-        setx PATH "%PATH%;[location of your gnu-toolchain-13.2 ROOT]\arm-gnu-toolchain-13.2.rel1-mingw-w64-i686-arm-none-eabi\bin"
-        ```
-- Step 5: Clone the following repository and go into Seeed_Grove_Vision_AI_Module_V2 folder
-    ```
-    git clone --recursive https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2.git
-    cd Seeed_Grove_Vision_AI_Module_V2
-    ```
-- Step 6: Compile the firmware
-    ```
-    cd EPII_CM55M_APP_S
-    make clean
-    make
-    ```
-- Output elf file: `./obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf`
-    ![alt text](images/output_elf_file_windows.PNG)
-- Step 7: Generate firmware image file
-    ```
-    cd ../we2_image_gen_local/
-    cp ../EPII_CM55M_APP_S/obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf input_case1_secboot/
-    we2_local_image_gen project_case1_blp_wlcsp.json
-    ```
-- Output firmware image: `./output_case1_sec_wlcsp/output.img`
-    ![alt text](images/output_image_windows.PNG)
-
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
-
-## How to flash the firmware?
-This part explains how you can flash the firmware to Grove Vision AI Module V2.
-### System Requirement
-- Driver
-    - If you find that the Grove Vision AI V2 is not recognised after connecting it to your computer, you should install the driver which can reference [here](https://wiki.seeedstudio.com/grove_vision_ai_v2/#driver).
-1. Grove Vision AI Module V2
-2. Connection cable
-    - Micro usb cable: connect to EVB (as Power/UART)
-3. Software Tools
-    Serial terminal emulation application
-    - In the following description, `TeraTerm` and `Minicom` will be used.
-        - Serial terminal emulation application Setting
-            - Baud Rate 921600 bps
-            - Data		8 bit
-            - Parity		none
-            - Stop		1 bit
-            - Flow control	none
-            - please check xmodem protocol is supported.
-        - Minicom (for Linux PC)
-            - Install minicom command
-                ```
-                sudo apt-get install minicom
-                ```
-            - Burn application to flash by using xmodem send application binary.
-                - Minicom will extra install "lrzsz" package to support xmodem protocol
-                    ![alt text](images/minicom_0_lrzsz.png)
-                -  If you did not have “lrzsz” instruction, please install by following instruction.
-                    ```
-                    sudo apt-get install lrzsz #(to support xmodem protocol)
-                    ```
-            - Open the permissions to access the device
-                ```
-                sudo setfacl -m u:[USERNAME]:rw /dev/ttyUSB0
-                # in my case
-                # sudo setfacl -m u:kris:rw /dev/ttyACM0
-                ```
-                ![alt text](images/flash_image_model_6.png)
-            - Open minicom
-                ```
-                sudo minicom -s
-                ```
-                ![alt text](images/minicom_1_open.png)
-            - Setup serial port and COM Port name
-                ![alt text](images/minicom_2_setup.png)
-                - Tips for finding the COM Port name.
-                  - You can use google chrome to connect to [Seeed SenseCraft AI](https://seeed-studio.github.io/SenseCraft-Web-Toolkit/#/setup/process), select `Grove Vision(V2)` and press `Connect`.
-                    ![alt text](images/minicom_3_tip.png)
-                  - Then, you would get the COM Port name.
-                    ![alt text](images/minicom_4_tip.png)
-        - TeraTerm (for Windows PC)
-            - Setup serial port 
-                ![alt text](images/flash_update_0_serial_port.png)
-                ![alt text](images/flash_update_0_serial_port_2.PNG)
-
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
-
-
-### Flash Image Update at Linux Environment by python code
-- Prerequisites for xmodem
-    - Please install the package at [xmodem/requirements.txt](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/xmodem/requirements.txt) 
-        ```
-        pip install -r xmodem/requirements.txt
-        ```
-- Disconnect `Minicom`
-- Make sure your `Seeed Grove Vision AI Module V2` is connect to PC.
-- Open the permissions to acceess the deivce
+```bash
+cd esp32c3_wifi_stream
+rm -f sdkconfig sdkconfig.old && idf.py fullclean   # a generated sdkconfig overrides sdkconfig.defaults!
+idf.py set-target esp32 && idf.py build             # downloads espressif/esp32-camera via the component manager
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
-sudo setfacl -m u:[USERNAME]:rw /dev/ttyUSB0
-# in my case
-# sudo setfacl -m u:kris:rw /dev/ttyACM0
+
+Wi-Fi credentials / static IP: copy overrides into `main/config_local.h` (git-ignored), see `main/config.h`.
+
+### ESP32-CAM-MB programming adapter
+* Plug the ESP32-CAM into the ESP32-CAM-MB board (USB-C/micro-USB, CH340 UART bridge; serial port is usually
+  `/dev/ttyUSB0` or `COMx`). The console is UART0 at 115200 baud.
+* The MB adapter drives GPIO0 and EN automatically, so normally no manual jumper is needed. If flashing fails with
+  "Failed to connect", hold the **IO0** button on the adapter, tap **RST**, then release IO0 (download mode), or retry.
+* After flashing press **RST** (or re-plug) to boot the app. GPIO0 is also the camera XCLK pin: it must not be held
+  low at reset, otherwise the chip stays in download mode (prints `waiting for download`).
+* The ROM bootloader prints some garbage at 74880 baud after reset; this is normal.
+* A weak USB port/cable can cause brownout resets when Wi-Fi starts; use a good 5 V supply.
+
+### Camera pin map
+`main/config.h` contains the standard AI-Thinker OV2640 map (PWDN=32, XCLK=0, SIOD=26, SIOC=27, D0-D7=5,18,19,21,36,39,
+34,35, VSYNC=25, HREF=23, PCLK=22). All `CAM_PIN_*` values, frame size (`CAM_FRAME_SIZE`, default SVGA) and JPEG quality
+(`CAM_JPEG_QUALITY`, default 10) can be overridden in `main/config_local.h`. **Other ESP32-CAM variants (M5Stack, TTGO, Wrover-Kit, ...) need a different
+pin map.** GPIO4 (flash LED) and the SD card pins are not used.
+
+### Design
+* `camera.c` initialises the OV2640 (JPEG, `CAMERA_GRAB_LATEST`, 2 frame buffers in PSRAM), copies each frame into a
+  frame-store slot and returns the driver buffer immediately, so a slow HTTP client never holds a camera buffer.
+  The copy (PSRAM to PSRAM, a few ms) is kept on purpose: it guarantees latest-frame semantics and lets the second
+  driver buffer capture the next frame while the previous one is copied.
+* `frame_store.c` keeps 3 slots of `FRAME_MAX_BYTES` (128 KB by default, set by the preset) in PSRAM (`CONFIG_SPIRAM=y`, quad mode, caps-alloc only:
+  Wi-Fi/lwIP stay in internal RAM). Larger frames are dropped and counted as bad.
+* `http_stream.c`, `wifi_sta.c` and the config mechanism are unchanged.
+
+## Image quality, resolution and FPS
+
+**Default: SVGA 800x600, JPEG quality 10** (lower number = better quality / bigger frames; was VGA 640x480, quality 12).
+Typical SVGA q10 frames are roughly 30-60 KB. **No hardware was available, so no FPS has been measured.** The default
+is chosen because the OV2640 at 20 MHz XCLK can deliver SVGA JPEG at well above 15 fps and ~40 KB x 12 fps is about
+4 Mbit/s of Wi-Fi traffic, so 10-15 fps is the expectation, not a verified result. The real limit is usually Wi-Fi
+(signal, router, one client) and scene complexity (noisy/detailed scenes give bigger JPEGs).
+
+Select a preset in `main/config_local.h` (git-ignored) and rebuild:
+
+```c
+#define CAM_PRESET 3   /* 1 SVGA q10 (default), 2 VGA q12, 3 XGA q12, 4 SXGA q14, 5 UXGA q16 */
 ```
-![alt text](images/flash_image_model_6.png)
-- Open `Terminal` and key-in following command
-- port: the COM number of your `Seeed Grove Vision AI Module V2`, for example,`/dev/ttyACM0`
-- baudrate: 921600
-- file: your firmware image [maximum size is 1MB]
-    ```
-    python3 xmodem/xmodem_send.py --port=[your COM number] --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local/output_case1_sec_wlcsp/output.img
 
-    # example:
-    # python3 xmodem/xmodem_send.py --port=/dev/ttyACM0 --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local/output_case1_sec_wlcsp/output.img
-    ```
-- model(optional): you can burn multiple models "[model tflite] [position of model on flash] [offset]"
-    - Position of model on flash is defined at the code [~/tflm_yolov8_od/common_config.h](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_od/common_config.h#L27) (take [tflm_yolov8_od](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_od/README.md) for example)
-    ```
-    python3 xmodem/xmodem_send.py --port=[your COM number] --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local/output_case1_sec_wlcsp/output.img --model="model_zoo/tflm_yolov8_od/yolov8n_od_192_delete_transpose_0xB7B000.tflite 0xB7B000 0x00000"
+| Preset | Resolution | Quality | `FRAME_MAX_BYTES` | Expected |
+|---|---|---|---|---|
+| 1 (default) | 800x600 | 10 | 128 KB | best balance, target >= 10-15 fps (unmeasured) |
+| 2 | 640x480 | 12 | 96 KB | fastest, previous default |
+| 3 | 1024x768 | 12 | 160 KB | sharper, may fall below 10 fps on weak Wi-Fi |
+| 4 | 1280x1024 | 14 | 224 KB | slow, probably < 8 fps |
+| 5 | 1600x1200 | 16 | 320 KB | slowest, a few fps |
 
-    # example:
-    # python3 xmodem/xmodem_send.py --port=/dev/ttyACM0 --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local/output_case1_sec_wlcsp/output.img --model="model_zoo/tflm_yolov8_od/yolov8n_od_192_delete_transpose_0xB7B000.tflite 0xB7B000 0x00000"
-    ```
-- It will start to burn firmware image.
-    ![alt text](images/flash_image_1_linux.png)
-- Please press `reset` buttun on `Seeed Grove Vision AI Module V2`.
-    ![alt text](images/grove_vision_ai_v2_all.jpg)
-- It will success to run the algorithm.
+`CAM_FRAME_SIZE`, `CAM_JPEG_QUALITY`, `FRAME_MAX_BYTES`, `FRAME_SLOT_COUNT`, `CAM_FB_COUNT` and `CAM_XCLK_FREQ_HZ` can
+also be overridden individually. Trade-offs: higher resolution / lower quality number -> larger frames -> lower fps and
+more Wi-Fi load; higher quality number -> blockier image but faster. Frames larger than `FRAME_MAX_BYTES` are dropped
+(counted in `bad_frames`) and never written past the slot; a compile-time check keeps slots + camera buffers under 3 MB of
+the 4 MB PSRAM. The lwIP TCP send buffer / window were raised to 23360 / 11680 bytes (internal RAM, ~12 KB more per
+socket) so a 100 KB frame does not need many round trips. Delete `sdkconfig` after changing `sdkconfig.defaults`.
 
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
+### Checking the result with `/status`
+1. Start the stream in a viewer, wait ~10 s, then open `http://<ip>/status` from the same or another device (it replaces
+   the stream connection, reopen `/` afterwards). `fps` decays to 0 after 3 s without new frames.
+2. `fps` - frames per second captured over the last second. Goal >= 10-15.
+3. `width` / `height` / `jpeg_quality` / `frame_size` - the active settings. `last_frame_bytes` and `max_frame_bytes`
+   - actual JPEG size and the largest seen; `max_frame_bytes` should stay well below `frame_max_bytes` (the slot size).
+4. `bad_frames` increasing -> frames exceeded `frame_max_bytes` (or were not valid JPEG): raise `FRAME_MAX_BYTES`
+   or the quality number. `dropped_frames` increasing -> no free slot (the HTTP side is too slow): lower resolution/quality
+   or improve Wi-Fi (`wifi.rssi`, better than about -70 dBm).
+5. `heap_free` / `heap_min_free` / `heap_largest_block` should stay stable over minutes (no leak).
+If `fps` < 10, go one preset down or raise `CAM_JPEG_QUALITY` by 2; if `fps` is well above 15, go one preset up.
 
-### Flash Image Update at Windows Environment by python code
-- Prerequisites for xmodem
-    - Please install the package at [xmodem/requirements.txt](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/xmodem/requirements.txt) 
-        ```
-        pip install -r xmodem/requirements.txt
-        ```
-- Disconnect `Tera Term`
-- Make sure your `Seeed Grove Vision AI Module V2` is connect to PC.
-- Open `CMD` and key-in following command
-- port: the COM number of your `Seeed Grove Vision AI Module V2` 
-- baudrate: 921600
-- file: your firmware image [maximum size is 1MB]
-    ```
-    python xmodem\xmodem_send.py --port=[your COM number] --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local\output_case1_sec_wlcsp\output.img 
-    # example:
-    # python xmodem\xmodem_send.py --port=COM123 --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local\output_case1_sec_wlcsp\output.img 
-    ```
-- model: you can burn multiple models "[model tflite] [position of model on flash] [offset]"
-    - Position of model on flash is defined at the code [~/tflm_yolov8_od/common_config.h](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_od/common_config.h#L27) (take [tflm_yolov8_od](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_od/README.md) for example)
-    ```
-    python xmodem\xmodem_send.py --port=[your COM number] --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local\output_case1_sec_wlcsp\output.img --model="model_zoo\tflm_yolov8_od\yolov8n_od_192_delete_transpose_0xB7B000.tflite 0xB7B000 0x00000"
+## RAM budget (historical, from the ESP32-C3 design; the Wi-Fi/lwIP trimming is kept)
 
-    # example:
-    # python xmodem\xmodem_send.py --port=COM123 --baudrate=921600 --protocol=xmodem --file=we2_image_gen_local\output_case1_sec_wlcsp\output.img --model="model_zoo\tflm_yolov8_od\yolov8n_od_192_delete_transpose_0xB7B000.tflite 0xB7B000 0x00000"
-    ```
-- It will start to burn firmware image automatically.
-    ![alt text](images/flash_image_1_window.png)
--  Please press `reset` buttun on `Seeed Grove Vision AI Module V2`.
-![alt text](images/grove_vision_ai_v2_all.jpg)  
-- It will success to run the algorithm.
+Problem on hardware (old config): `/status` after 30 s showed `heap_free 8412`, `heap_min_free 4284`; the page loaded
+once, then new connections failed and the chip rebooted.
 
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
+| Item | Before | After | Measured? |
+|---|---|---|---|
+| Frame slots (3x) | 3 x 56 KB = ~170 KB | 3 x 24 KB = ~74 KB (`FRAME_MAX_BYTES`, larger frames are dropped) | computed |
+| lwIP TCP send buf / window | 23360 / 11680 per socket | 11520 / 5760 | computed |
+| WiFi dynamic RX/TX buffers | 24 / 24 | 16 / 16 | computed |
+| HTTP sockets | 5 (+3 internal) | 1 (+3 internal), `LWIP_MAX_SOCKETS=5` | computed |
+| Stream clients / tasks | up to 3 tasks x 4 KB | 1 task x 3.5 KB | computed |
+| IRAM optimizations (WiFi, lwIP) | on | off (IRAM and DRAM share the C3 SRAM) | computed |
+| NVS | initialised | not used | computed |
+| `heap_free` after boot | 8.4 KB (30 s) | **not measured - no hardware in the build environment**; target >= 100 KB | **could not be measured** |
+| fps at 640x480 | 16 | expected unchanged (> 15); **not measured** | **could not be measured** |
 
-### Flash Image Update at Linux Environment
-Following steps update application in the flash.
-- Step 1: Open `Minicom`, setup serial port and COM Port name-> connect to Grove Vision AI Module V2. (Please reference the minicom part of [System Requirement](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#system-requirement))
-    ![alt text](images/minicom_5_connect.png)
-- Step 2: Hold down any key on the keyboard (except the Enter key) and press the reset button to reset Grove Vision AI Module V2 and the startup options will be displayed.
-    ![alt text](images/minicom_6.png)
-- Step 3: Press button “1” and Grove Vision AI Module V2 will enter receiving mode after then.  
-    ![alt text](images/minicom_7.png)
-- Step 4: Press `Ctrl+A` on keyboard to enter minicom menu, and then press `s` on keyboard to upload file and select `xmodem`. 
-    ![alt text](images/minicom_8.png)
-- Step 5: Select the firmware image at `Seeed_Grove_Vision_AI_Module_V2\we2_image_gen_local\output_case1_sec_wlcsp\output.img` and press `enter` to burn. 
-    ![alt text](images/minicom_9.png)
-- Step 6: After burning is compelete, press any key to be continue. 
-    ![alt text](images/minicom_10.png)
-- Step 7: Then, you will see the message "Do you want to end file transmission and reboot system? (y)" is displayed. Press button `y` to restart.
-    ![alt text](images/minicom_11.png)
-- Step 8: You will see the uart on `minicom` which is runing your algorithm.
-    ![alt text](images/minicom_12.png)
+Measure on hardware: `GET /status` (`heap_free`, `heap_min_free`, `heap_largest_block`) and the serial log line
+`heap free ..., min ..., largest block ... | stack hwm httpd/stream/spi_rx` printed at boot and every 10 s. The
+`stack hwm` values are the minimum free stack in bytes (`uxTaskGetStackHighWaterMark`); lower the stack sizes
+(`cfg.stack_size`, `STREAM_TASK_STACK`, `SPI_RX_STACK_BYTES`) only if they stay well above ~512.
 
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
+### How leaks are avoided
+* No per-frame or per-request `malloc`/`free`: frame slots are allocated once (zero-copy ref counted hand-off from the
+  SPI task to the HTTP task), `/status` and the stream headers use stack buffers, the SPI task uses a static stack.
+* Only one stream task exists; every exit path of the task (client left, send error, timeout, replaced by a new
+  viewer, low-heap drop) releases the frame slot, completes the async request, decrements the client counter and
+  deletes the task. A new `/stream` request first asks the running one to leave.
+* WiFi reconnect uses a single one-shot timer; `esp_wifi_connect()` is only called from `STA_START` and from that timer
+  (stopped on connect / got-IP). The radio settings (bandwidth, TX power) are applied before connecting: changing
+  the bandwidth from the `STA_CONNECTED` handler caused the `disconnected (reason 8)` right after connecting.
+* Low-heap watchdog (`main.c`): free heap or largest block < 6 KB for 5 s -> the stream client is dropped; still low
+  after 10 s -> `esp_restart()`. `CONFIG_ESP_SYSTEM_PANIC_REBOOT=y` also reboots after a panic.
 
+### HTTP server
+`max_open_sockets = 1` with `lru_purge_enable`: the page (`/`) and the stream (`/stream`, own task, async handler) do not
+deadlock because the page connection is closed/purged when the browser opens the stream connection, and the page
+itself needs no further requests. `/status` while streaming replaces the stream connection (one viewer only); use a
+second request only when no stream is open. If this proves unworkable with a given browser raise `max_open_sockets`
+to 2 and `CONFIG_LWIP_MAX_SOCKETS` to 6 (httpd uses 3 sockets internally). Send/receive timeouts are 10 s.
 
-### Flash Image Update at Windows Environment
-Following steps update application in the flash.
-- Step 1: Open `TeraTerm` and select File -> New connection, connect to Grove Vision AI Module V2.
-    ![alt text](images/flash_update_1.png)
-- Step 2: Hold down any key on the keyboard (except the Enter key) and press the reset button to reset Grove Vision AI Module V2 and the startup options will be displayed.
-    ![alt text](images/flash_update_2.png)
-- Step 3: Press button “1” and Grove Vision AI Module V2 will enter receiving mode after then. Select target flash image(output.img) by File->Transfer->XMODEM->Send. 
-    ![alt text](images/flash_update_3.png)
-- Step 4: After the firmware image burning is completed, the message "Do you want to end file transmission and reboot system? (y)" is displayed. Press button `y` to restart.
-    ![alt text](images/flash_update_4.png)
-- Step 5: You will see the uart on `TeraTerm` which is runing your algorithm.
-    ![alt text](images/flash_update_5.PNG)
+### sdkconfig changes
 
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
+| Option | Value | Reason | Trade-off |
+|---|---|---|---|
+| `COMPILER_OPTIMIZATION_SIZE` | y | smaller code | slightly slower code (fps to be verified) |
+| `ESP_SYSTEM_PANIC_REBOOT` | y | camera recovers by itself | none |
+| `ESP_TASK_WDT_TIMEOUT_S` | 10 | sane watchdog | slower hang detection |
+| `ESP_CONSOLE_USB_SERIAL_JTAG` | y | XIAO C3 logs go over its USB port | none |
+| `HEAP_POISONING_DISABLED`, `HEAP_TRACING_OFF`, `FREERTOS_USE_TRACE_FACILITY=n` | - | no debug overhead | no heap debugging |
+| `BOOTLOADER_LOG_LEVEL_WARN` | y | quieter boot | - |
+| `BT_ENABLED` | n | no Bluetooth needed | - |
+| `ESP_PHY_CALIBRATION_AND_DATA_STORAGE` | n | NVS no longer needed | full PHY calibration each boot (~100 ms) |
+| `ESP_WIFI_STATIC_RX_BUFFER_NUM` | 8 | fewer permanent RX buffers | slightly less burst headroom |
+| `ESP_WIFI_DYNAMIC_RX/TX_BUFFER_NUM` | 16 / 16 | cap WiFi buffer RAM | fewer queued packets; > 5 Mbit/s needed only |
+| `ESP_WIFI_RX_BA_WIN` / `TX_BA_WIN` | 6 / 6 | smaller block-ack windows (<= dynamic RX and <= 2x static RX) | lower peak throughput |
+| `ESP_WIFI_IRAM_OPT`, `RX_IRAM_OPT`, `SLP_IRAM_OPT` | n | IRAM and DRAM share the C3 SRAM | a little less WiFi throughput |
+| `ESP_WIFI_SOFTAP_SUPPORT` | n | STA only | no AP mode |
+| `ESP_WIFI_NVS_ENABLED` | n | WiFi config kept in RAM | none |
+| `ESP_WIFI_FTM/DPP/11KV/ENTERPRISE/OWE/SAE_PK/SUITE_B_192/GCMP/GMAC`, RX/TX stats | n | unused features | - |
+| `ESP_WIFI_ENABLE_WPA3_SAE` | y | the "SteamCam" network is WPA3 | a few KB of RAM and during auth; set `n` for WPA2-only networks. WPA2/WPA3 mixed works either way |
+| `LWIP_IPV6` | n | no IPv6 | IPv4 only |
+| `LWIP_DHCPS`, `IP_FORWARD`, `IPV4_NAPT`, `LWIP_STATS`, `BROADCAST_PING`, `DHCP_DOES_ARP_CHECK` | n | unused | - |
+| `LWIP_IRAM_OPTIMIZATION`, `EXTRA_IRAM_OPTIMIZATION` | n | IRAM shares SRAM | slightly slower lwIP |
+| `LWIP_TCP_SND_BUF_DEFAULT` / `WND_DEFAULT` | 11520 / 5760 | ~2 frames in flight; 4 MSS window | upload limited to roughly 8 Mbit/s at WiFi latency, enough for ~6 Mbit/s |
+| `LWIP_TCP_RECVMBOX_SIZE`, `UDP_RECVMBOX_SIZE`, `TCPIP_RECVMBOX_SIZE` | 6, 6, 16 | small mailboxes | - |
+| `LWIP_TCP_ACCEPTMBOX_SIZE` | 2 | one client | - |
+| `LWIP_TCPIP_TASK_STACK_SIZE` | 2560 | smaller tcpip task | verify with hwm if more handlers are added |
+| `LWIP_TCP_SACK_OUT` | n | saves memory | slower loss recovery |
+| `LWIP_MAX_SOCKETS` | 5 | 3 httpd internal + 1 + 1 spare | - |
+| `LWIP_MAX_ACTIVE_TCP` / `LISTENING_TCP` / `UDP_PCBS` | 8 / 2 / 6 | fewer PCBs | - |
+| `MSC_ENABLE_MDNS` (own option) | y | `<host>.local`; set `n` to save ~8-10 KB | no `.local` name |
+| `MDNS_MAX_SERVICES` | 1 | only `_http._tcp` | - |
+| `HTTPD_MAX_URI_LEN` | 128 | smaller scratch buffer | longer URIs rejected |
 
-### Flash using Edge Impulse CLI tools
-
-This method works on all supported operating systems (Windows/Linux/MacOS...)
-
-- Step 1: [Install the Edge Impulse CLI tools](https://docs.edgeimpulse.com/docs/tools/edge-impulse-cli/cli-installation)
-- Step 2: Open any system terminal and run the following command
-  ```
-  himax-flash-tool -d WiseEye2 -f <path_to_four_firmware_img_file>
-  ```
-- Step 3: Wait until you see the following message:
-  ```
-  [HMX] Press **RESET** to start the application...
-  [HMX] Firmware update completed
-  ```
-
-Note: if the flashing process hangs, just cancel it (Ctrl+C) and start once again.
-
-[Back to Outline](#outline)
-
-## How to restore to the original factory settings
-### Linux Environment
-- Update the flash image `Seeed_SenseCraft_AI*.img` to Grove Vision AI Module V2 and press `reset` buttun.
-    ![alt text](images/minicom_5_connect.png)
-- Disconnect the `Minicom`:
-    - Please press `Ctrl+A` on keyboard and press `z` on keyboard to go to the menu of `minicom`.
-        ![alt text](images/minicom_13.png)
-    - Then, press `q` on keyboard to quit with no reset `minicom`, and press `yes` to leave.
-        ![alt text](images/minicom_14.png)
-
-- Open the permissions to acceess the deivce
-  ```
-  sudo setfacl -m u:[USERNAME]:rw /dev/ttyUSB0
-  # in my case
-  # sudo setfacl -m u:kris:rw /dev/ttyACM0
-  ```
-  ![alt text](images/flash_image_model_6.png)
-- After doing the above steps, you can run the [SenseCraft AI](https://wiki.seeedstudio.com/grove_vision_ai_v2_software_support/#-no-code-getting-started-with-sensecraft-ai-) on Grove Vision AI Module V2.
-  1. Introduction : https://wiki.seeedstudio.com/grove_vision_ai_v2/
-  2. Connect Grove Vision AI Module to NB USB port
-  3. Open "Google Chrome" browser
-  4. Open [SenseCraft Homepage](https://seeed-studio.github.io/SenseCraft-Web-Toolkit/#/setup/process)
-  5. Select "Grove Vision AI(WE2)" and connect (serial port)
-    ![alt text](images/minicom_3_tip.png)
-    ![alt text](images/SenseCraft_1.png)
-    ![alt text](images/SenseCraft_0.png)
-
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
-
-### Windows Environment
-- Update the flash image `Seeed_SenseCraft AI*.img` to Grove Vision AI Module V2 and press `reset` buttun.
-    ![alt text](images/seeed_firmware_success.PNG)
-- Disconnect the `TeraTerm`.
-    ![alt text](images/seeed_disconnect.png)
-- After doing the above steps, you can run the [SenseCraft AI](https://wiki.seeedstudio.com/grove_vision_ai_v2_software_support/#-no-code-getting-started-with-sensecraft-ai-) on Grove Vision AI Module V2.
-  1. Introduction : https://wiki.seeedstudio.com/grove_vision_ai_v2/
-  2. Install CH343 UART driver (CH343SER.ZIP) (Optional)
-  3. Connect Grove Vision AI Module to NB USB port
-  4. Open "Microsoft Edge" browser
-  5. Open [SenseCraft Homepage](https://seeed-studio.github.io/SenseCraft-Web-Toolkit/#/setup/process)
-  6. Select "Grove Vision AI(WE2)" and connect (serial port)
-
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
-
-## How to add support for raspberry pi camera?
-You can reference the scenario app [allon_sensor_tflm](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/EPII_CM55M_APP_S/app/scenario_app/allon_sensor_tflm) , [allon_sensor_tflm_freertos](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/EPII_CM55M_APP_S/app/scenario_app/allon_sensor_tflm_freertos) and [tflm_fd_fm](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/EPII_CM55M_APP_S/app/scenario_app/tflm_fd_fm).
-Take allon_sensor_tflm for example, you should only modify the [allon_sensor_tflm.mk](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/app/scenario_app/allon_sensor_tflm/allon_sensor_tflm.mk#L37) from cis_ov5647 to cis_imx219 or cis_imx477.
-```
-#CIS_SUPPORT_INAPP_MODEL = cis_ov5647
-CIS_SUPPORT_INAPP_MODEL = cis_imx219
-#CIS_SUPPORT_INAPP_MODEL = cis_imx477
-```
-So that, it can support cis_imx219 or cis_imx477 camera.
-
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
-
-## How to use CMSIS-NN at the project?
--  Modify the setting at the [makefile](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/makefile)
-    - Enable the flag `LIB_CMSIS_NN_ENALBE` to build CMSIS-NN library 
-        ```
-        LIB_CMSIS_NN_ENALBE = 1
-        ``` 
-    - You can reference the scenario app example about [allon_sensor_tflm_cmsis_nn](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/tree/main/EPII_CM55M_APP_S/app/scenario_app/allon_sensor_tflm_cmsis_nn) which is the example running the model without passing vela and using the CMSIS-NN library.
-        - Change the `APP_TYPE` to `allon_sensor_tflm_cmsis_nn` at the [makefile](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2/blob/main/EPII_CM55M_APP_S/makefile)
-            ```
-            APP_TYPE = allon_sensor_tflm_cmsis_nn
-            ```
-
-[Back to Outline](https://github.com/HimaxWiseEyePlus/Seeed_Grove_Vision_AI_Module_V2?tab=readme-ov-file#outline)
+esp-tls / http_client / console are not linked because no component requires them.
