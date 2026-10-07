@@ -22,32 +22,65 @@ static const char *TAG = "camera";
 #define LOCK_TIMEOUT_MS         3000   /* max wait for the camera task to release the camera */
 #define VERIFY_FRAMES           6      /* frames inspected after a change (old-size frames may still be queued) */
 #define NVS_NAMESPACE           "camcfg"
-#define NVS_KEY_PRESET          "preset"
+#define NVS_KEY_RES             "res"
+#define NVS_KEY_QUALITY         "quality"
+#define NVS_KEY_PRESET          "preset"   /* legacy combined preset id, read only for migration */
 
-/* id, name, frame size, width, height, JPEG quality, max frame bytes */
-static const camera_preset_t s_presets[CAMERA_PRESET_COUNT] = {
-    { 1, "SVGA", FRAMESIZE_SVGA,  800,  600, 10, 128 * 1024 },
-    { 2, "VGA",  FRAMESIZE_VGA,   640,  480, 12,  96 * 1024 },
-    { 3, "XGA",  FRAMESIZE_XGA,  1024,  768, 12, 160 * 1024 },
-    { 4, "SXGA", FRAMESIZE_SXGA, 1280, 1024, 14, 224 * 1024 },
-    { 5, "UXGA", FRAMESIZE_UXGA, 1600, 1200, 16, 320 * 1024 },
+/* id (stable, stored in NVS; 1-5 match the former preset ids), name, frame size, width, height, max frame bytes
+ * (limits are generous because quality is independent; frame slots cap them at FRAME_MAX_BYTES anyway) */
+static const camera_resolution_t s_resolutions[CAMERA_RESOLUTION_COUNT] = {
+    { 6, "QVGA",  FRAMESIZE_QVGA,   320,  240,  64 * 1024 },
+    { 2, "VGA",   FRAMESIZE_VGA,    640,  480, 128 * 1024 },
+    { 1, "SVGA",  FRAMESIZE_SVGA,   800,  600, 192 * 1024 },
+    { 3, "XGA",   FRAMESIZE_XGA,   1024,  768, 256 * 1024 },
+    { 4, "SXGA",  FRAMESIZE_SXGA,  1280, 1024, 320 * 1024 },
+    { 5, "UXGA",  FRAMESIZE_UXGA,  1600, 1200, 320 * 1024 },
 };
 
-static SemaphoreHandle_t s_lock;          /* held by camera_task around every capture, and by camera_set_preset */
-static atomic_int s_waiters;              /* camera_set_preset callers waiting for s_lock */
-#define DEFAULT_PRESET_ID ((CAM_PRESET >= 1 && CAM_PRESET <= CAMERA_PRESET_COUNT) ? CAM_PRESET : 1)
-static atomic_int s_active = DEFAULT_PRESET_ID;
+/* former combined presets 1..5: resolution id, quality */
+static const uint8_t s_legacy[5][2] = { { 1, 10 }, { 2, 12 }, { 3, 12 }, { 4, 14 }, { 5, 16 } };
+
+static SemaphoreHandle_t s_lock;          /* held by camera_task around every capture, and by camera_set_settings */
+static atomic_int s_waiters;              /* camera_set_settings callers waiting for s_lock */
+#define DEFAULT_RES_ID  (camera_resolution_by_id(CAM_RESOLUTION) ? CAM_RESOLUTION : 2)
+#define DEFAULT_QUALITY (camera_quality_valid(CAM_JPEG_QUALITY) ? CAM_JPEG_QUALITY : 12)
+static atomic_uint s_active = ((unsigned)2 << 8) | 12;              /* (resolution id << 8) | quality: one word, so readers always see a coherent pair */
 static bool s_ready;
 static bool s_persist;
 
-const camera_preset_t *camera_preset_by_id(int id)
+const camera_resolution_t *camera_resolution_at(int index)
 {
-    return (id >= 1 && id <= CAMERA_PRESET_COUNT) ? &s_presets[id - 1] : NULL;
+    return (index >= 0 && index < CAMERA_RESOLUTION_COUNT) ? &s_resolutions[index] : NULL;
 }
 
-const camera_preset_t *camera_active_preset(void)
+const camera_resolution_t *camera_resolution_by_id(int id)
 {
-    return camera_preset_by_id(atomic_load(&s_active));
+    for (int i = 0; i < CAMERA_RESOLUTION_COUNT; i++) {
+        if (s_resolutions[i].id == id) {
+            return &s_resolutions[i];
+        }
+    }
+    return NULL;
+}
+
+bool camera_quality_valid(int quality)
+{
+    return quality >= CAMERA_QUALITY_MIN && quality <= CAMERA_QUALITY_MAX;
+}
+
+static camera_settings_t unpack(unsigned v)
+{
+    camera_settings_t s = { camera_resolution_by_id(v >> 8), v & 0xFF };
+    if (!s.resolution || !camera_quality_valid(s.quality)) {   /* cannot happen: only validated pairs are stored */
+        s.resolution = camera_resolution_by_id(2);
+        s.quality = 12;
+    }
+    return s;
+}
+
+void camera_get_settings(camera_settings_t *out)
+{
+    *out = unpack(atomic_load(&s_active));
 }
 
 bool camera_settings_persistent(void)
@@ -55,9 +88,9 @@ bool camera_settings_persistent(void)
     return s_persist;
 }
 
-static int load_stored_preset(void)
+static camera_settings_t load_stored_settings(void)
 {
-    int id = DEFAULT_PRESET_ID;
+    camera_settings_t s = { camera_resolution_by_id(DEFAULT_RES_ID), DEFAULT_QUALITY };
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
     if (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) {
@@ -66,25 +99,34 @@ static int load_stored_preset(void)
         ESP_LOGW(TAG, "NVS unavailable (0x%x): selection will not be persisted", err);
     }
     if (err == ESP_OK) {
-        uint8_t v;
-        if (nvs_get_u8(h, NVS_KEY_PRESET, &v) == ESP_OK && camera_preset_by_id(v)) {
-            id = v;
+        uint8_t r, q, legacy;
+        if (nvs_get_u8(h, NVS_KEY_RES, &r) == ESP_OK && nvs_get_u8(h, NVS_KEY_QUALITY, &q) == ESP_OK &&
+            camera_resolution_by_id(r) && camera_quality_valid(q)) {
+            s.resolution = camera_resolution_by_id(r);
+            s.quality = q;
+        } else if (nvs_get_u8(h, NVS_KEY_PRESET, &legacy) == ESP_OK && legacy >= 1 && legacy <= 5) {
+            s.resolution = camera_resolution_by_id(s_legacy[legacy - 1][0]);
+            s.quality = s_legacy[legacy - 1][1];
+            ESP_LOGI(TAG, "migrated legacy preset %d", legacy);
         } else {
-            ESP_LOGW(TAG, "no valid stored preset, using %d", id);
+            ESP_LOGW(TAG, "no valid stored settings, using defaults");
         }
         nvs_close(h);
     }
-    return id;
+    return s;
 }
 
-static esp_err_t save_preset(int id)
+static esp_err_t save_settings(const camera_settings_t *s)
 {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) {
         return err;
     }
-    err = nvs_set_u8(h, NVS_KEY_PRESET, (uint8_t)id);
+    err = nvs_set_u8(h, NVS_KEY_RES, s->resolution->id);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(h, NVS_KEY_QUALITY, s->quality);
+    }
     if (err == ESP_OK) {
         err = nvs_commit(h);
     }
@@ -93,17 +135,17 @@ static esp_err_t save_preset(int id)
 }
 
 /* Sensor settings only; the caller holds s_lock */
-static bool sensor_apply(const camera_preset_t *p)
+static bool sensor_apply(const camera_settings_t *s)
 {
     sensor_t *sen = esp_camera_sensor_get();
     return sen && sen->set_framesize && sen->set_quality &&
-           sen->set_framesize(sen, (framesize_t)p->frame_size) == 0 &&
-           sen->set_quality(sen, p->quality) == 0;
+           sen->set_framesize(sen, (framesize_t)s->resolution->frame_size) == 0 &&
+           sen->set_quality(sen, s->quality) == 0;
 }
 
-/* Wait until the driver delivers frames of the preset's size (frames captured before the change may still be queued).
+/* Wait until the driver delivers frames of the selected size (frames captured before the change may still be queued).
  * The caller holds s_lock; frames are returned immediately. */
-static bool sensor_settled(const camera_preset_t *p)
+static bool sensor_settled(const camera_settings_t *s)
 {
     for (int i = 0; i < VERIFY_FRAMES; i++) {
         camera_fb_t *fb = esp_camera_fb_get();
@@ -115,18 +157,18 @@ static bool sensor_settled(const camera_preset_t *p)
             frame_store_parse_jpeg_size(fb->buf, fb->len, &w, &h);
         }
         esp_camera_fb_return(fb);
-        if (w == p->width && h == p->height) {
+        if (w == s->resolution->width && h == s->resolution->height) {
             return true;
         }
     }
     return false;
 }
 
-esp_err_t camera_set_preset(int id, bool *saved)
+esp_err_t camera_set_settings(int resolution_id, int quality, bool *saved)
 {
-    const camera_preset_t *want = camera_preset_by_id(id);
+    camera_settings_t want = { camera_resolution_by_id(resolution_id), (uint8_t)quality };
     *saved = false;
-    if (!want) {
+    if (!want.resolution || !camera_quality_valid(quality)) {
         return ESP_ERR_INVALID_ARG;
     }
     if (!s_ready) {
@@ -139,20 +181,22 @@ esp_err_t camera_set_preset(int id, bool *saved)
         return ESP_ERR_TIMEOUT;
     }
 
-    const camera_preset_t *prev = camera_active_preset();
+    camera_settings_t prev;
+    camera_get_settings(&prev);
     esp_err_t ret = ESP_OK;
-    if (want != prev) {
-        if (!sensor_apply(want)) {
+    if (want.resolution != prev.resolution || want.quality != prev.quality) {
+        if (!sensor_apply(&want)) {
             ret = ESP_FAIL;
-        } else if (!sensor_settled(want)) {
+        } else if (!sensor_settled(&want)) {
             ret = ESP_ERR_INVALID_RESPONSE;
         }
         if (ret == ESP_OK) {
-            atomic_store(&s_active, want->id);
+            atomic_store(&s_active, ((unsigned)want.resolution->id << 8) | want.quality);
         } else {
-            ESP_LOGE(TAG, "preset %d (%s) failed: 0x%x, restoring %s", want->id, want->name, ret, prev->name);
-            if (!sensor_apply(prev) || !sensor_settled(prev)) {
-                ESP_LOGE(TAG, "restoring preset %d failed too", prev->id);
+            ESP_LOGE(TAG, "%s q%u failed: 0x%x, restoring %s q%u", want.resolution->name, want.quality, ret,
+                     prev.resolution->name, prev.quality);
+            if (!sensor_apply(&prev) || !sensor_settled(&prev)) {
+                ESP_LOGE(TAG, "restoring %s q%u failed too", prev.resolution->name, prev.quality);
             }
         }
     }
@@ -160,16 +204,16 @@ esp_err_t camera_set_preset(int id, bool *saved)
 
     if (ret == ESP_OK) {
         if (!s_persist) {
-            ESP_LOGW(TAG, "preset %d active, NVS unavailable: not saved", want->id);
+            ESP_LOGW(TAG, "%s q%u active, NVS unavailable: not saved", want.resolution->name, want.quality);
         } else {
-            esp_err_t e = save_preset(want->id);
+            esp_err_t e = save_settings(&want);
             *saved = (e == ESP_OK);
             if (e != ESP_OK) {
-                ESP_LOGE(TAG, "saving preset %d failed: 0x%x", want->id, e);
+                ESP_LOGE(TAG, "saving settings failed: 0x%x", e);
             }
         }
-        ESP_LOGI(TAG, "preset %d (%s %ux%u q%u) active, saved %d", want->id, want->name, want->width, want->height,
-                 want->quality, (int)*saved);
+        ESP_LOGI(TAG, "%s %ux%u q%u active, saved %d", want.resolution->name, want.resolution->width,
+                 want.resolution->height, want.quality, (int)*saved);
     }
     return ret;
 }
@@ -179,7 +223,7 @@ static void camera_task(void *arg)
     frame_slot_t *slot = frame_store_writer_slot();
     for (;;) {
         if (atomic_load(&s_waiters) > 0) {
-            vTaskDelay(pdMS_TO_TICKS(10));   /* let camera_set_preset take the lock */
+            vTaskDelay(pdMS_TO_TICKS(10));   /* let camera_set_settings take the lock */
         }
         /* The lock covers only the capture and the copy into the slot, never any network send. */
         xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -190,7 +234,9 @@ static void camera_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
-        uint32_t limit = camera_active_preset()->max_bytes;
+        camera_settings_t cur;
+        camera_get_settings(&cur);
+        uint32_t limit = cur.resolution->max_bytes;
         if (limit > slot->capacity) {
             limit = slot->capacity;
         }
@@ -212,7 +258,7 @@ static void camera_task(void *arg)
 
 void camera_start(void)
 {
-    const camera_preset_t *preset = camera_preset_by_id(load_stored_preset());
+    camera_settings_t preset = load_stored_settings();
     camera_config_t cfg = {
         .pin_pwdn = CAM_PIN_PWDN,
         .pin_reset = CAM_PIN_RESET,
@@ -235,7 +281,7 @@ void camera_start(void)
         .ledc_channel = LEDC_CHANNEL_0,
         .pixel_format = PIXFORMAT_JPEG,
         .frame_size = CAM_INIT_FRAME_SIZE,  /* buffers for the largest size; the stored preset is applied below */
-        .jpeg_quality = preset->quality,
+        .jpeg_quality = preset.quality,
         .fb_count = CAM_FB_COUNT,
         .fb_location = CAMERA_FB_IN_PSRAM,
         .grab_mode = CAMERA_GRAB_LATEST,
@@ -246,14 +292,14 @@ void camera_start(void)
         return; /* WiFi and HTTP still start; /status shows 0 frames */
     }
     s_lock = xSemaphoreCreateMutex();
-    if (!s_lock || !sensor_apply(preset)) {
-        ESP_LOGE(TAG, "applying preset %d (%s) failed: camera disabled", preset->id, preset->name);
+    if (!s_lock || !sensor_apply(&preset)) {
+        ESP_LOGE(TAG, "applying %s q%u failed: camera disabled", preset.resolution->name, preset.quality);
         esp_camera_deinit();
         return;
     }
-    atomic_store(&s_active, preset->id);
+    atomic_store(&s_active, ((unsigned)preset.resolution->id << 8) | preset.quality);
     s_ready = true;
     xTaskCreate(camera_task, "camera", CAMERA_TASK_STACK_BYTES, NULL, 5, NULL);
-    ESP_LOGI(TAG, "OV2640 ready, preset %d (%s %ux%u), JPEG quality %u, persistence %s", preset->id, preset->name,
-             preset->width, preset->height, preset->quality, s_persist ? "on" : "off");
+    ESP_LOGI(TAG, "OV2640 ready, %s %ux%u, JPEG quality %u, persistence %s", preset.resolution->name,
+             preset.resolution->width, preset.resolution->height, preset.quality, s_persist ? "on" : "off");
 }
